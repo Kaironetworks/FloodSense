@@ -11,7 +11,7 @@
   <img src="https://img.shields.io/badge/Stage-Working%20Prototype-B7791F?style=flat-square" alt="Working prototype" />
 </p>
 
-*An urban resilience platform concept developed for the HACK2IMPACT 2026
+*An urban resilience platform concept developed for the
 Rain-Resilient Cities challenge, using Guayaquil, Ecuador, as its
 initial demonstration environment.*
 
@@ -318,7 +318,7 @@ Never walk, drive, or wade through floodwater based solely on a map or score. Fo
 
 ## Project context
 
-FloodSense was developed for **HACK2IMPACT 2026 — Rain-Resilient
+FloodSense was developed for **Rain-Resilient
 Cities**, with Guayaquil, Ecuador, as the initial challenge setting.
 
 The broader ambition is a reusable urban-resilience platform: one that
