@@ -360,8 +360,8 @@ reliability before adding complexity.
 
 ## Project context
 
-FloodSense was developed for **HACK2IMPACT 2026 — Rain-Resilient
-Cities**, with Guayaquil, Ecuador, as the initial challenge setting.
+FloodSense was developed for **Rain-Resilient
+Cities**, like Guayaquil, Ecuador, as the initial challenge setting.
 
 The broader ambition is a reusable urban-resilience platform: one that
 helps communities and response teams make evidence-aware decisions
