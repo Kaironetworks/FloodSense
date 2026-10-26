@@ -11,7 +11,7 @@
 <img src="https://img.shields.io/badge/Stage-Research%20Prototype-B7791F?style=flat-square" alt="Research Prototype" />
 </p>
 
-*An urban resilience platform concept developed for the HACK2IMPACT 2026
+*An urban resilience platform concept developed for
 Rain-Resilient Cities challenge, using Guayaquil, Ecuador, as its
 initial demonstration environment.*
 
@@ -19,7 +19,7 @@ initial demonstration environment.*
 
 ------------------------------------------------------------------------
 
-## The idea
+## Idea
 
 Flooding is not only a weather problem. It becomes a city-wide emergency
 when people cannot tell which roads are passable, whether a reported
@@ -37,7 +37,7 @@ available evidence easier to interpret, surface missing or stale
 information, and help people make better-informed decisions under
 pressure.
 
-## Why FloodSense?
+## Problem Story
 
 | The real-world problem                                                                       | FloodSense’s response                                                                                                            |
 |----------------------------------------------------------------------------------------------|----------------------------------------------------------------------------------------------------------------------------------|
