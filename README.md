@@ -9,6 +9,7 @@ Internet is needed in the browser for map tiles (OpenStreetMap), Leaflet (unpkg)
 ## What works
 - GIS map (Leaflet): toggle layers, legend, search, GPS, click-to-assess any point.
 - Five deterministic Guayaquil sensor nodes are available at `/api/flood/sensors?scenario=heavy`; their water depth, elevation, drainage, tide and rainfall scenario values are explicitly simulated and unverified.
+- `/api/flood/route?from=GYE-DOWNTOWN-9OCT&to=GYE-BARCELONA&scenario=heavy` provides a deterministic route regression scenario: the sensor-marked 9 de Octubre Floodway is impassable and the Urdesa-Barcelona alternative remains available.
 - Explainable risk score (rules-0.2): official warning + susceptibility zone + verified reports + nearest simulated sensor. Labeled "estimated risk score", never a probability; "Insufficient data" when no signals.
 - Community reports: validation, rate limit, duplicate = corroboration, moderator verify/reject, history, audit log.
 - SOS: private storage, access code for the resident, responder status updates, false-alarm cancel, honest "dispatch not connected" message, 911 link. SOS coordinates never appear in public endpoints.

@@ -11,17 +11,17 @@
    "lat": -2.133,
    "lng": -79.901,
    "status": "open",
-   "updated": "2026-10-26T06:52:43.157Z",
-   "by": "demo"
+   "updated": "2026-10-26T08:09:24.918Z",
+   "by": "community"
   },
   {
    "id": "S2",
    "name": "Supermercado (sample) Centro",
    "lat": -2.196,
    "lng": -79.886,
-   "status": "closed",
-   "updated": "2026-10-26T06:22:43.159Z",
-   "by": "demo"
+   "status": "open",
+   "updated": "2026-10-26T08:09:25.819Z",
+   "by": "community"
   },
   {
    "id": "S3",
@@ -63,6 +63,55 @@
    "text": "Reminder: shop status is community-reported, not confirmed by the shop.",
    "at": "2026-10-26T06:32:43.159Z",
    "role": "moderator"
+  },
+  {
+   "id": "M-1FC544",
+   "name": "Shop board",
+   "text": "Farmacia (sample) Alborada: reported open",
+   "at": "2026-10-26T08:09:21.560Z",
+   "role": "system"
+  },
+  {
+   "id": "M-C0F8BB",
+   "name": "Shop board",
+   "text": "Farmacia (sample) Alborada: reported open",
+   "at": "2026-10-26T08:09:22.685Z",
+   "role": "system"
+  },
+  {
+   "id": "M-3AF329",
+   "name": "Shop board",
+   "text": "Farmacia (sample) Alborada: reported open",
+   "at": "2026-10-26T08:09:24.062Z",
+   "role": "system"
+  },
+  {
+   "id": "M-F6F74A",
+   "name": "Shop board",
+   "text": "Farmacia (sample) Alborada: reported open",
+   "at": "2026-10-26T08:09:24.542Z",
+   "role": "system"
+  },
+  {
+   "id": "M-AA46AB",
+   "name": "Shop board",
+   "text": "Farmacia (sample) Alborada: reported open",
+   "at": "2026-10-26T08:09:24.726Z",
+   "role": "system"
+  },
+  {
+   "id": "M-FC5D6B",
+   "name": "Shop board",
+   "text": "Farmacia (sample) Alborada: reported open",
+   "at": "2026-10-26T08:09:24.918Z",
+   "role": "system"
+  },
+  {
+   "id": "M-CBFE68",
+   "name": "Shop board",
+   "text": "Supermercado (sample) Centro: reported open",
+   "at": "2026-10-26T08:09:25.820Z",
+   "role": "system"
   }
  ],
  "alerts": [
@@ -273,5 +322,15 @@
  ],
  "sos": [],
  "audit": [],
- "rl": {}
+ "rl": {
+  "::1shopst": [
+   1793002161558,
+   1793002162685,
+   1793002164061,
+   1793002164541,
+   1793002164725,
+   1793002164917,
+   1793002165819
+  ]
+ }
 }
