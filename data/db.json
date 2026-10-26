@@ -320,8 +320,36 @@
    "history": []
   }
  ],
- "sos": [],
- "audit": [],
+ "sos": [
+  {
+   "id": "SOS-8FBD6A",
+   "secret": "0cd45d66",
+   "type": "flooding",
+   "description": "",
+   "lat": 13.125775568876625,
+   "lng": 80.12659834059599,
+   "status": "received",
+   "created": "2026-10-26T15:15:44.956Z",
+   "history": [
+    {
+     "at": "2026-10-26T15:15:44.956Z",
+     "status": "received",
+     "by": "system"
+    }
+   ],
+   "notes": [],
+   "assignee": null,
+   "owner": "anon"
+  }
+ ],
+ "audit": [
+  {
+   "at": "2026-10-26T15:15:44.956Z",
+   "who": "system",
+   "action": "sos.created",
+   "target": "SOS-8FBD6A"
+  }
+ ],
  "rl": {
   "::1shopst": [
    1793002161558,
@@ -331,6 +359,12 @@
    1793002164725,
    1793002164917,
    1793002165819
+  ],
+  "127.0.0.1replay": [
+   1793027361608
+  ],
+  "127.0.0.1sos": [
+   1793027744955
   ]
  }
 }

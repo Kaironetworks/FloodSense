@@ -1,0 +1,20 @@
+{
+    "chat.tools.terminal.autoApprove": {
+        "/^Set-Location 'c:\\\\Developer\\\\FloodSense'; node test\\.js$/": {
+            "approve": true,
+            "matchCommandLine": true
+        },
+        "/^Set-Location 'c:\\\\Developer\\\\FloodSense'; node --check server\\.js; node --check public/app\\.js; node --check test\\.js; git diff --check; git diff --stat; git status --short --branch$/": {
+            "approve": true,
+            "matchCommandLine": true
+        },
+        "/^Set-Location 'c:\\\\Developer\\\\FloodSense'; node --check server\\.js; node --check public/app\\.js; node --check evidence\\.js$/": {
+            "approve": true,
+            "matchCommandLine": true
+        },
+        "/^Set-Location 'c:\\\\Developer\\\\FloodSense'; node -e \"const \\{fuseEvidence\\}=require\\('\\./evidence'\\); console\\.log\\(fuseEvidence\\(\\{lat:-2\\.2,lng:-79\\.9,now:'2026-01-02T12:00:00\\.000Z',evidence:\\[\\{id:'w',type:'water_level',valueM:\\.8,observedAt:'2026-01-02T11:55:00\\.000Z',lat:-2\\.2,lng:-79\\.9\\},\\{id:'o',type:'road_status',status:'open',observedAt:'2026-01-02T11:58:00\\.000Z',lat:-2\\.2,lng:-79\\.9\\}\\]\\}\\)\\.conflicts\\)\"$/": {
+            "approve": true,
+            "matchCommandLine": true
+        }
+    }
+}

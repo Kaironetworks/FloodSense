@@ -1,6 +1,10 @@
 // FloodSense prototype backend. Zero dependencies (Node >= 18). Data persisted to data/db.json.
 const http = require('http'), fs = require('fs'), path = require('path'), crypto = require('crypto');
-const PORT = process.env.PORT || 3000, HOST = process.env.HOST || '0.0.0.0', DB = path.join(__dirname, 'data', 'db.json'), UP = path.join(__dirname, 'data', 'uploads');
+const { fuseEvidence } = require('./evidence');
+const PORT = process.env.PORT || 3000, HOST = process.env.HOST || '0.0.0.0', DB = path.resolve(process.env.FLOODSENSE_DB || path.join(__dirname, 'data', 'db.json')), UP = path.resolve(process.env.FLOODSENSE_UPLOADS || path.join(__dirname, 'data', 'uploads'));
+const DEMO_SECRET = process.env.FLOODSENSE_DEMO_SECRET || '';
+const localHost = ['127.0.0.1', 'localhost', '::1'].includes(HOST);
+const demoRolesEnabled = localHost && DEMO_SECRET.length >= 16;
 const now = () => new Date().toISOString(), ago = m => new Date(Date.now() - m * 60000).toISOString();
 const uid = p => p + '-' + crypto.randomBytes(3).toString('hex').toUpperCase();
 
@@ -12,6 +16,7 @@ const SENSOR_NODES = [
   { id: 'GYE-SINAI-VULN', name: 'Monte Sinai', lat: -2.2534, lng: -79.9321, elevation: 1, drainage: 0.1, normalDepth: 1.25, heavyDepth: 1.65 },
   { id: 'GYE-BARCELONA', name: 'Av. Barcelona Axis', lat: -2.2011, lng: -79.9234, elevation: 3, drainage: 0.5, normalDepth: 0.28, heavyDepth: 0.65 }
 ];
+const BLOCKING_CATEGORIES = ['flooded_road', 'closure', 'dangerous_level', 'blocked_evac'];
 
 function seed() { // ALL FICTIONAL / DEMO. Coordinates approximate, for illustration only.
   return {
@@ -25,7 +30,7 @@ function seed() { // ALL FICTIONAL / DEMO. Coordinates approximate, for illustra
       { id: 'M1', name: 'Ana (sample)', text: 'Farmacia in Alborada is open, short line.', at: ago(25), role: 'guest' },
       { id: 'M2', name: 'Luis (sample)', text: 'Av. in Guasmo is under water, shops there are closed.', at: ago(52), role: 'guest' },
       { id: 'M3', name: 'Moderator (sample)', text: 'Reminder: shop status is community-reported, not confirmed by the shop.', at: ago(45), role: 'moderator' }],
-    alerts: [{ id: 'A1', title: 'DEMO: Heavy-rain warning, Guayaquil', severity: 'high', source: 'DEMO (INAMHI adapter not connected)', published: ago(40), validUntil: new Date(Date.now() + 6 * 3600e3).toISOString(), rainMmH: 38, official: true }],
+    alerts: [{ id: 'A1', title: 'DEMO: Heavy-rain warning, Guayaquil', severity: 'high', source: 'DEMO (INAMHI adapter not connected)', published: ago(40), validUntil: new Date(Date.now() + 6 * 3600e3).toISOString(), rainMmH: 38, official: false, demo: true }],
     zones: [ // coarse sample polygons [lat,lng]; real data = SGR "Susceptibilidad de Inundaciones" MapServer
       { id: 'Z1', name: 'Guasmo (demo zone)', level: 'high', poly: [[-2.235, -79.915], [-2.235, -79.875], [-2.275, -79.875], [-2.275, -79.915]] },
       { id: 'Z2', name: 'Suburbio Oeste (demo zone)', level: 'high', poly: [[-2.195, -79.955], [-2.195, -79.915], [-2.235, -79.915], [-2.235, -79.955]] },
@@ -37,9 +42,9 @@ function seed() { // ALL FICTIONAL / DEMO. Coordinates approximate, for illustra
       { id: 'F4', name: 'Pharmacy (sample) Alborada', type: 'pharmacy', lat: -2.1330, lng: -79.9010, phone: '', verified: false, source: 'Demo sample' },
       { id: 'F5', name: 'Fire station (sample) Sur', type: 'fire', lat: -2.2200, lng: -79.8950, phone: '', verified: false, source: 'Demo sample' }],
     reports: [
-      { id: 'R-SEED1', category: 'flooded_road', title: 'DEMO: Water over road near Guasmo', description: 'Fictional seeded report.', lat: -2.2500, lng: -79.8950, status: 'verified', severity: 'high', corroborations: 2, created: ago(90), updated: ago(60), by: 'demo', gps: true, photos: ['/samples/flood1.svg'], history: [{ at: ago(60), by: 'moderator', to: 'verified' }] },
-      { id: 'R-SEED3', category: 'closure', title: 'DEMO: Road closed, underpass flooded (Guasmo)', description: 'Fictional seeded report with sample photo.', lat: -2.2400, lng: -79.9000, status: 'verified', severity: 'high', corroborations: 1, created: ago(80), updated: ago(50), by: 'demo', gps: true, photos: ['/samples/flood2.svg'], history: [{ at: ago(50), by: 'moderator', to: 'verified' }] },
-      { id: 'R-SEED2', category: 'debris', title: 'DEMO: Fallen tree, Av. Domingo Comín', description: 'Fictional seeded report.', lat: -2.2100, lng: -79.9300, status: 'awaiting', severity: 'moderate', corroborations: 0, created: ago(20), updated: ago(20), by: 'demo', gps: false, photos: ['/samples/tree.svg'], history: [] }],
+      { id: 'R-SEED1', category: 'flooded_road', title: 'DEMO: Water over road near Guasmo', description: 'Fictional seeded report.', lat: -2.2500, lng: -79.8950, status: 'verified', severity: 'high', corroborations: 2, created: ago(90), updated: ago(60), by: 'demo', locationSource: 'demo_sample', photos: ['/samples/flood1.svg'], history: [{ at: ago(60), by: 'moderator', to: 'verified' }] },
+      { id: 'R-SEED3', category: 'closure', title: 'DEMO: Road closed, underpass flooded (Guasmo)', description: 'Fictional seeded report with sample photo.', lat: -2.2400, lng: -79.9000, status: 'verified', severity: 'high', corroborations: 1, created: ago(80), updated: ago(50), by: 'demo', locationSource: 'demo_sample', photos: ['/samples/flood2.svg'], history: [{ at: ago(50), by: 'moderator', to: 'verified' }] },
+      { id: 'R-SEED2', category: 'debris', title: 'DEMO: Fallen tree, Av. Domingo Comín', description: 'Fictional seeded report.', lat: -2.2100, lng: -79.9300, status: 'awaiting', severity: 'moderate', corroborations: 0, created: ago(20), updated: ago(20), by: 'demo', locationSource: 'demo_sample', photos: ['/samples/tree.svg'], history: [] }],
     sos: [], audit: [], rl: {}
   };
 }
@@ -122,8 +127,12 @@ function sensorRoute(from, to, heavy) {
 }
 function assess(lat, lng) {
   const reasons = [], missing = []; let score = 0, signals = 0;
-  const al = db.alerts.filter(a => new Date(a.validUntil) > new Date());
-  if (al.length) { const w = { low: 10, moderate: 20, high: 35, critical: 45 }[al[0].severity] || 0; score += w; signals++; reasons.push({ f: 'Official warning (' + al[0].severity + ')', pts: w, src: al[0].source }); } else missing.push('No active official warning in database');
+  const active = db.alerts.filter(a => new Date(a.validUntil) > new Date());
+  const official = active.filter(a => a.official === true && a.demo !== true && !String(a.source || '').toUpperCase().startsWith('DEMO'));
+  const simulated = active.filter(a => !official.includes(a));
+  if (official.length) { const a = official[0], w = { low: 10, moderate: 20, high: 35, critical: 45 }[a.severity] || 0; score += w; signals++; reasons.push({ f: 'Authoritative warning (' + a.severity + ')', pts: w, src: a.source }); }
+  else missing.push('No active authoritative warning in database');
+  if (simulated.length) reasons.push({ f: 'Simulated warning (' + simulated[0].severity + ')', pts: 0, src: simulated[0].source || 'Demo data; excluded from risk weighting' });
   const z = db.zones.find(z => inPoly(lat, lng, z.poly));
   if (z) { const w = z.level === 'high' ? 30 : 15; score += w; signals++; reasons.push({ f: 'Inside susceptibility zone: ' + z.name, pts: w, src: 'Historical susceptibility, not current flooding' }); } else missing.push('Not inside any loaded susceptibility polygon (coverage is coarse and partial)');
   const near = db.reports.filter(r => r.status === 'verified' && km(lat, lng, r.lat, r.lng) < 1.5 && Date.now() - new Date(r.updated) < 24 * 3600e3);
@@ -140,12 +149,45 @@ function assess(lat, lng) {
   }
   missing.push('Google Flood Hub: not connected', 'Satellite SAR: not integrated');
   const level = signals === 0 ? 'insufficient' : score >= 70 ? 'critical' : score >= 45 ? 'high' : score >= 20 ? 'moderate' : 'low';
-  return { version: 'rules-0.2', label: 'Estimated risk score (not a probability)', score: Math.min(100, score), level, reasons, missing, computedAt: now(), dataMode: 'SIMULATED_LOCAL_INPUTS', demo: true };
+  return { version: 'rules-0.2', label: 'Estimated risk score (not a probability)', score: Math.min(100, score), level, reasons, missing, computedAt: now(), dataMode: 'SIMULATED_LOCAL_INPUTS', demo: true, intelligence: buildIntelligence(lat, lng) };
 }
 
-const send = (res, code, obj) => { res.writeHead(code, { 'Content-Type': 'application/json', 'X-Content-Type-Options': 'nosniff' }); res.end(JSON.stringify(obj)); };
-const body = req => new Promise(r => { let b = ''; req.on('data', c => { b += c; if (b.length > 2.5e6) req.destroy(); }); req.on('end', () => { try { r(JSON.parse(b || '{}')); } catch { r({}); } }); });
+function buildIntelligence(lat, lng) {
+  const evidence = [], active = db.alerts.filter(a => new Date(a.validUntil) > new Date());
+  active.forEach(a => evidence.push({ id: a.id, type: 'rainfall', valueMmH: a.rainMmH, observedAt: a.published, sourceId: a.source || a.id, reliability: a.official && !a.demo ? 0.8 : 0.25, lat, lng }));
+  const sensor = nearestSensor(lat, lng);
+  if (sensor.distanceKm <= 2.5) evidence.push({ id: sensor.id, type: 'water_level', valueM: sensor.normalDepth, thresholdM: 1, observedAt: now(), sourceId: sensor.id, reliability: 0.45, lat: sensor.lat, lng: sensor.lng });
+  const zone = db.zones.find(z => inPoly(lat, lng, z.poly));
+  if (zone) evidence.push({ id: zone.id, type: 'terrain', level: zone.level, observedAt: now(), sourceId: zone.id, reliability: 0.7, lat, lng });
+  const roads = [];
+  db.reports.filter(r => r.status !== 'rejected').forEach(r => {
+    evidence.push({ id: r.id, type: 'citizen_report', category: r.category, severity: r.severity, observedAt: r.updated || r.created, sourceId: r.by || r.id, reliability: r.status === 'verified' ? 0.65 : 0.25, lat: r.lat, lng: r.lng });
+    if (r.status === 'verified' && BLOCKING_CATEGORIES.includes(r.category)) roads.push({ id: r.id, name: r.title, status: 'closed', distanceKm: +km(lat, lng, r.lat, r.lng).toFixed(2) });
+  });
+  db.sos.filter(s => km(lat, lng, s.lat, s.lng) <= 2 && Date.now() - new Date(s.created).getTime() < 30 * 60000).forEach(s => evidence.push({ id: s.id, type: 'sos', observedAt: s.created, sourceId: s.owner || s.id, lat: s.lat, lng: s.lng }));
+  return fuseEvidence({ lat, lng, evidence, roads, facilities: db.facilities, now: now() });
+}
+
+class HttpError extends Error { constructor(status, message) { super(message); this.status = status; } }
+const send = (res, code, obj) => { if (res.headersSent) return; res.writeHead(code, { 'Content-Type': 'application/json', 'X-Content-Type-Options': 'nosniff' }); res.end(JSON.stringify(obj)); };
+const body = req => new Promise((resolve, reject) => {
+  const max = 2.5e6; const chunks = []; let bytes = 0, settled = false;
+  const finish = (fn, value) => { if (!settled) { settled = true; fn(value); } };
+  if (+req.headers['content-length'] > max) { req.resume(); return finish(reject, new HttpError(413, 'request body too large')); }
+  req.on('data', c => { bytes += c.length; if (bytes > max) { req.resume(); finish(reject, new HttpError(413, 'request body too large')); return; } chunks.push(c); });
+  req.on('aborted', () => finish(reject, new HttpError(400, 'request aborted')));
+  req.on('error', () => finish(reject, new HttpError(400, 'request body unreadable')));
+  req.on('end', () => { try { finish(resolve, JSON.parse(Buffer.concat(chunks).toString('utf8') || '{}')); } catch { finish(reject, new HttpError(400, 'invalid JSON body')); } });
+});
 const limit = (ip, key, n, win) => { const k = ip + key, t = Date.now(); db.rl[k] = (db.rl[k] || []).filter(x => t - x < win); if (db.rl[k].length >= n) return false; db.rl[k].push(t); return true; };
+const sameSecret = (a, b) => { if (typeof a !== 'string' || typeof b !== 'string') return false; const aa = Buffer.from(a), bb = Buffer.from(b); return aa.length === bb.length && crypto.timingSafeEqual(aa, bb); };
+const coordinates = q => {
+  const hasLat = q.has('lat'), hasLng = q.has('lng');
+  if (!hasLat && !hasLng) return null;
+  const latRaw = q.get('lat'), lngRaw = q.get('lng'), lat = Number(latRaw), lng = Number(lngRaw);
+  if (!hasLat || !hasLng || !latRaw.trim() || !lngRaw.trim() || !Number.isFinite(lat) || !Number.isFinite(lng) || !num(lat, -90, 90) || !num(lng, -180, 180)) throw new HttpError(400, 'invalid coordinates');
+  return { lat, lng };
+};
 const ytId = s => { const m = /(?:v=|youtu\.be\/|embed\/|live\/)([\w-]{11})/.exec(s || '') || /^([\w-]{11})$/.exec(String(s || '').trim()); return m ? m[1] : ''; };
 function savePhoto(id, d) { const m = /^data:image\/jpeg;base64,([A-Za-z0-9+/=]+)$/.exec(d || ''); if (!m) return null; const buf = Buffer.from(m[1], 'base64'); if (buf.length > 1.5e6 || buf[0] !== 0xFF || buf[1] !== 0xD8 || buf[2] !== 0xFF) return null; fs.mkdirSync(UP, { recursive: true }); fs.writeFileSync(path.join(UP, id + '.jpg'), buf); return '/uploads/' + id + '.jpg'; }
 const NEWS_LINKS = [['INAMHI alerts', 'https://servicios.inamhi.gob.ec/alertas/'], ['SGR (Gestión de Riesgos)', 'https://sgrportal.gestionderiesgos.gob.ec'], ['ECU 911', 'https://www.ecu911.gob.ec'], ['Alcaldía de Guayaquil', 'https://www.guayaquil.gob.ec']];
@@ -167,10 +209,10 @@ async function sources() {
 const routes = [];
 const R = (m, p, fn) => routes.push([m, new RegExp('^' + p.replace(/:\w+/g, '([^/]+)') + '$'), fn]);
 const need = (ctx, ...roles) => { if (!ctx.user || (roles.length && !roles.includes(ctx.user.role))) { ctx.res && send(ctx.res, ctx.user ? 403 : 401, { error: ctx.user ? 'forbidden' : 'sign in required' }); return false; } return true; };
-const pubReport = r => ({ photos: r.photos || [], gps: !!r.gps, id: r.id, category: r.category, title: r.title, description: r.description, lat: r.lat, lng: r.lng, status: r.status, severity: r.severity, corroborations: r.corroborations, created: r.created, updated: r.updated });
+const pubReport = r => ({ photos: r.photos || [], gps: false, locationSource: r.locationSource || (r.gps ? 'legacy_client_claim' : 'map_pick'), id: r.id, category: r.category, title: r.title, description: r.description, lat: r.lat, lng: r.lng, status: r.status, severity: r.severity, corroborations: r.corroborations, created: r.created, updated: r.updated });
 
-R('GET', '/api/health', async c => send(c.res, 200, { ok: true, mode: db.mode, time: now() }));
-R('POST', '/api/login', async c => { const b = await body(c.req); const role = ['resident', 'moderator', 'responder', 'admin'].includes(b.role) ? b.role : 'resident'; const t = crypto.randomBytes(16).toString('hex'); sessions[t] = { role, name: clean(b.name || role, 30) + ' (demo)', id: t.slice(0, 6) }; audit(sessions[t].name, 'login', role); save(); send(c.res, 200, { token: t, user: sessions[t] }); });
+R('GET', '/api/health', async c => send(c.res, 200, { ok: true, mode: db.mode, time: now(), demoRoles: demoRolesEnabled }));
+R('POST', '/api/login', async c => { const b = await body(c.req), requested = ['resident', 'moderator', 'responder', 'admin'].includes(b.role) ? b.role : 'resident'; if (requested !== 'resident' && (!demoRolesEnabled || !sameSecret(b.demoKey, DEMO_SECRET))) return send(c.res, 403, { error: 'privileged demo roles are disabled; use a local demo configuration' }); const t = crypto.randomBytes(16).toString('hex'); sessions[t] = { role: requested, name: clean(b.name || requested, 30) + ' (demo)', id: t.slice(0, 6) }; audit(sessions[t].name, 'login', requested); save(); send(c.res, 200, { token: t, user: sessions[t] }); });
 R('GET', '/api/sources/status', async c => send(c.res, 200, { fetchedAt: now(), sources: await sources() }));
 R('GET', '/api/alerts', async c => send(c.res, 200, { demo: true, alerts: db.alerts.map(a => ({ ...a, fresh: new Date(a.validUntil) > new Date() })) }));
 R('GET', '/api/flood/zones', async c => send(c.res, 200, { demo: true, note: 'Coarse sample polygons, not street-level flood boundaries.', zones: db.zones }));
@@ -186,7 +228,7 @@ R('GET', '/api/flood/sensors', async c => {
       elevationM: n.elevation, drainage: n.drainage,
       waterDepthM: heavy ? n.heavyDepth : n.normalDepth,
       roadStatus: heavy && n.id === 'GYE-SINAI-VULN' ? 'IMPASSABLE' : heavy && n.heavyDepth >= 1 ? 'CAUTION' : 'OPEN',
-      dataStatus: 'SIMULATED_UNVERIFIED'
+      dataStatus: 'SIMULATED_UNVERIFIED', observedAt: now()
     }))
   });
 });
@@ -197,7 +239,15 @@ R('GET', '/api/flood/route', async c => {
   if (result.error) return send(c.res, 400, { error: result.error });
   send(c.res, result.found ? 200 : 409, result);
 });
-R('GET', '/api/flood/assessments', async c => { const lat = +c.q.get('lat'), lng = +c.q.get('lng'); if (!num(lat, -90, 90) || !num(lng, -180, 180)) return send(c.res, 400, { error: 'invalid coordinates' }); send(c.res, 200, assess(lat, lng)); });
+R('GET', '/api/flood/assessments', async c => { const p = coordinates(c.q); if (!p) throw new HttpError(400, 'lat and lng are required'); send(c.res, 200, assess(p.lat, p.lng)); });
+R('GET', '/api/flood/intelligence', async c => { const p = coordinates(c.q); if (!p) throw new HttpError(400, 'lat and lng are required'); send(c.res, 200, buildIntelligence(p.lat, p.lng)); });
+R('POST', '/api/flood/replay', async c => {
+  if (!limit(c.ip, 'replay', 20, 60000)) return send(c.res, 429, { error: 'Too many replay requests.' });
+  const b = await body(c.req);
+  if (!num(b.lat, -90, 90) || !num(b.lng, -180, 180) || !Array.isArray(b.evidence) || b.evidence.length > 200) return send(c.res, 400, { error: 'lat, lng and evidence array (maximum 200) are required' });
+  const roads = Array.isArray(b.roads) ? b.roads.slice(0, 100).map(r => ({ id: clean(r.id, 80), name: clean(r.name, 120), status: clean(r.status, 30), distanceKm: Number(r.distanceKm), importance: clean(r.importance, 30), facilityIds: Array.isArray(r.facilityIds) ? r.facilityIds.slice(0, 20).map(id => clean(id, 80)) : [] })) : [];
+  send(c.res, 200, fuseEvidence({ lat: b.lat, lng: b.lng, evidence: b.evidence, roads, facilities: db.facilities, now: b.now || now() }));
+});
 R('GET', '/api/incidents', async c => { const st = c.q.get('status'), cat = c.q.get('category'); let l = db.reports.filter(r => r.status !== 'rejected'); if (st) l = l.filter(r => r.status === st); if (cat) l = l.filter(r => r.category === cat); send(c.res, 200, { demo: true, incidents: l.sort((a, b) => b.created.localeCompare(a.created)).slice(0, 100).map(pubReport) }); });
 R('POST', '/api/reports', async c => {
   if (!limit(c.ip, 'rep', 5, 600000)) return send(c.res, 429, { error: 'Too many reports. Try again in a few minutes.' });
@@ -207,7 +257,7 @@ R('POST', '/api/reports', async c => {
   if (errs.length) return send(c.res, 400, { error: 'validation failed', fields: errs });
   const dup = db.reports.find(r => r.category === b.category && km(r.lat, r.lng, b.lat, b.lng) < 0.15 && Date.now() - new Date(r.created) < 3 * 3600e3 && r.status !== 'rejected');
   if (dup) { if (photo) dup.photos = (dup.photos || []).concat(photo); dup.corroborations++; if (dup.status === 'awaiting' && dup.corroborations >= 1) dup.status = 'corroborated'; dup.updated = now(); dup.history.push({ at: now(), by: 'system', to: dup.status + ' (duplicate nearby counted as corroboration)' }); save(); return send(c.res, 200, { corroboratedExisting: true, report: pubReport(dup), message: 'A similar report exists nearby. Your report counted as corroboration.' }); }
-  const r = { id: id0, photos: photo ? [photo] : [], gps: b.gps === true, category: b.category, title: clean(b.title, 80), description: clean(b.description, 500), lat: b.lat, lng: b.lng, status: 'awaiting', severity: ['low', 'moderate', 'high'].includes(b.severity) ? b.severity : 'moderate', corroborations: 0, created: now(), updated: now(), by: c.user ? c.user.id : 'anon', history: [] };
+  const r = { id: id0, photos: photo ? [photo] : [], gps: false, locationSource: b.locationSource === 'gps_requested' ? 'client_requested_gps' : 'map_pick', category: b.category, title: clean(b.title, 80), description: clean(b.description, 500), lat: b.lat, lng: b.lng, status: 'awaiting', severity: ['low', 'moderate', 'high'].includes(b.severity) ? b.severity : 'moderate', corroborations: 0, created: now(), updated: now(), by: c.user ? c.user.id : 'anon', history: [] };
   db.reports.push(r); save(); send(c.res, 201, { report: pubReport(r) });
 });
 R('POST', '/api/reports/:id/verify', async c => { if (!need(c, 'moderator', 'admin')) return; const b = await body(c.req), r = db.reports.find(x => x.id === c.p[0]); if (!r) return send(c.res, 404, { error: 'not found' }); if (!['verified', 'rejected', 'corroborated'].includes(b.status)) return send(c.res, 400, { error: 'invalid status' }); r.status = b.status; r.updated = now(); r.history.push({ at: now(), by: c.user.name, to: b.status }); audit(c.user.name, 'report.' + b.status, r.id); save(); send(c.res, 200, { report: pubReport(r) }); });
@@ -220,7 +270,7 @@ R('DELETE', '/api/chat/:id', async c => { if (!need(c, 'moderator', 'admin')) re
 R('GET', '/api/shops', async c => send(c.res, 200, { demo: true, note: 'Open/closed is community-reported and not confirmed by the shops.', shops: db.shops }));
 R('POST', '/api/shops', async c => { if (!limit(c.ip, 'shop', 5, 600000)) return send(c.res, 429, { error: 'Too many shops added.' }); const b = await body(c.req); if (clean(b.name, 60).length < 3 || !num(b.lat, -90, 90) || !num(b.lng, -180, 180) || !['open', 'closed'].includes(b.status)) return send(c.res, 400, { error: 'name, location and status required' }); const s = { id: uid('S'), name: clean(b.name, 60), lat: b.lat, lng: b.lng, status: b.status, updated: now(), by: 'community' }; db.shops.push(s); save(); send(c.res, 201, { shop: s }); });
 R('POST', '/api/shops/:id/status', async c => { if (!limit(c.ip, 'shopst', 10, 60000)) return send(c.res, 429, { error: 'Too many updates.' }); const b = await body(c.req), s = db.shops.find(x => x.id === c.p[0]); if (!s || !['open', 'closed', 'unknown'].includes(b.status)) return send(c.res, 400, { error: 'invalid' }); s.status = b.status; s.updated = now(); s.by = 'community'; db.chat.push({ id: uid('M'), name: 'Shop board', text: s.name + ': reported ' + b.status, at: now(), role: 'system' }); save(); send(c.res, 200, { shop: s }); });
-R('GET', '/api/safe-locations', async c => { const lat = +c.q.get('lat'), lng = +c.q.get('lng'), t = c.q.get('type'); let l = db.facilities.filter(f => !t || f.type === t); if (num(lat, -90, 90) && num(lng, -180, 180)) l = l.map(f => ({ ...f, distanceKm: +km(lat, lng, f.lat, f.lng).toFixed(2) })).sort((a, b) => a.distanceKm - b.distanceKm); send(c.res, 200, { demo: true, note: 'Availability/open status not provided: no trusted source connected.', facilities: l }); });
+R('GET', '/api/safe-locations', async c => { const p = coordinates(c.q), t = c.q.get('type'); let l = db.facilities.filter(f => !t || f.type === t); if (p) l = l.map(f => ({ ...f, distanceKm: +km(p.lat, p.lng, f.lat, f.lng).toFixed(2) })).sort((a, b) => a.distanceKm - b.distanceKm); send(c.res, 200, { demo: true, note: 'Availability/open status not provided: no trusted source connected.', facilities: l }); });
 R('POST', '/api/sos', async c => {
   if (!limit(c.ip, 'sos', 3, 600000)) return send(c.res, 429, { error: 'SOS rate limit reached. If in danger, call 911 now.' });
   const b = await body(c.req); if (!num(b.lat, -90, 90) || !num(b.lng, -180, 180)) return send(c.res, 400, { error: 'location required (tap the map or use GPS)' });
@@ -229,8 +279,10 @@ R('POST', '/api/sos', async c => {
   db.sos.push(s); audit('system', 'sos.created', s.id); save();
   send(c.res, 201, { ref: s.id, accessCode: s.secret, status: s.status, message: 'Your request was submitted to the FloodSense response dashboard. Official emergency dispatch is not connected. Call 911 if you are in danger.' });
 });
-R('GET', '/api/sos/:id', async c => { const s = db.sos.find(x => x.id === c.p[0]); if (!s) return send(c.res, 404, { error: 'not found' }); const ok = (c.user && ['responder', 'admin'].includes(c.user.role)) || s.secret === c.q.get('code'); if (!ok) return send(c.res, 403, { error: 'access code required' }); send(c.res, 200, { ref: s.id, status: s.status, history: s.history.map(h => ({ at: h.at, status: h.status })), dispatchConnected: false }); });
-R('POST', '/api/sos/:id/cancel', async c => { const s = db.sos.find(x => x.id === c.p[0]); const b = await body(c.req); if (!s || s.secret !== b.code) return send(c.res, 403, { error: 'access code required' }); s.status = 'cancelled_false_alarm'; s.history.push({ at: now(), status: s.status, by: 'resident' }); save(); send(c.res, 200, { status: s.status }); });
+const sosStatus = async c => { const s = db.sos.find(x => x.id === c.p[0]); if (!s) return send(c.res, 404, { error: 'not found' }); const b = await body(c.req); if (!limit(c.ip, 'sos-status-' + c.p[0], 5, 600000)) return send(c.res, 429, { error: 'Too many status attempts. Try again later.' }); const ok = (c.user && ['responder', 'admin'].includes(c.user.role)) || sameSecret(b.code, s.secret); if (!ok) return send(c.res, 403, { error: 'access code required' }); send(c.res, 200, { ref: s.id, status: s.status, history: s.history.map(h => ({ at: h.at, status: h.status })), dispatchConnected: false }); };
+R('POST', '/api/sos/:id/status', sosStatus);
+R('GET', '/api/sos/:id', async c => send(c.res, 405, { error: 'use POST /api/sos/:id/status with the access code in the body' }));
+R('POST', '/api/sos/:id/cancel', async c => { const s = db.sos.find(x => x.id === c.p[0]); const b = await body(c.req); if (!s) return send(c.res, 404, { error: 'not found' }); if (!limit(c.ip, 'sos-cancel-' + c.p[0], 5, 600000) || !sameSecret(b.code, s.secret)) return send(c.res, 403, { error: 'access code required' }); s.status = 'cancelled_false_alarm'; s.history.push({ at: now(), status: s.status, by: 'resident' }); save(); send(c.res, 200, { status: s.status }); });
 R('GET', '/api/responder/incidents', async c => { if (!need(c, 'responder', 'admin')) return; send(c.res, 200, { incidents: db.sos.map(({ secret, ...s }) => s).reverse() }); });
 R('PATCH', '/api/responder/incidents/:id/status', async c => { if (!need(c, 'responder', 'admin')) return; const b = await body(c.req), s = db.sos.find(x => x.id === c.p[0]); if (!s) return send(c.res, 404, { error: 'not found' }); if (!['acknowledged', 'assigned', 'en_route', 'resolved', 'unable_to_respond'].includes(b.status)) return send(c.res, 400, { error: 'invalid status' }); s.status = b.status; if (b.status === 'assigned') s.assignee = c.user.name; if (b.note) s.notes.push({ at: now(), by: c.user.name, text: clean(b.note, 300) }); s.history.push({ at: now(), status: b.status, by: c.user.name }); audit(c.user.name, 'sos.' + b.status, s.id); save(); send(c.res, 200, { status: s.status }); });
 R('GET', '/api/admin/overview', async c => { if (!need(c, 'admin', 'moderator', 'responder')) return; send(c.res, 200, { reports: db.reports.length, awaiting: db.reports.filter(r => r.status === 'awaiting').length, sos: db.sos.length, sosOpen: db.sos.filter(s => !['resolved', 'cancelled_false_alarm', 'unable_to_respond'].includes(s.status)).length }); });
@@ -242,11 +294,11 @@ http.createServer(async (req, res) => {
   const u = new URL(req.url, 'http://x'); const tok = (req.headers.authorization || '').replace('Bearer ', '');
   const ctx = { req, res, q: u.searchParams, user: sessions[tok], ip: req.socket.remoteAddress };
   if (u.pathname.startsWith('/api/')) {
-    for (const [m, re, fn] of routes) { const x = re.exec(u.pathname); if (m === req.method && x) { ctx.p = x.slice(1); try { return await fn(ctx); } catch (e) { console.error(e.message); return send(res, 500, { error: 'internal error' }); } } }
+    for (const [m, re, fn] of routes) { const x = re.exec(u.pathname); if (m === req.method && x) { ctx.p = x.slice(1); try { return await fn(ctx); } catch (e) { console.error(e.message); return send(res, e.status || 500, { error: e.status ? e.message : 'internal error' }); } } }
     return send(res, 404, { error: 'not found' });
   }
   if (u.pathname.startsWith('/uploads/')) { const fn = path.basename(u.pathname); return fs.readFile(path.join(UP, fn), (e, d) => { if (e || !/\.jpg$/.test(fn)) { res.writeHead(404); return res.end(); } res.writeHead(200, { 'Content-Type': 'image/jpeg', 'X-Content-Type-Options': 'nosniff' }); res.end(d); }); }
   const f = path.join(__dirname, 'public', u.pathname === '/' ? 'index.html' : path.normalize(u.pathname).replace(/^(\.\.[/\\])+/, ''));
   if (!f.startsWith(path.join(__dirname, 'public'))) { res.writeHead(403); return res.end(); }
   fs.readFile(f, (e, d) => { if (e) { res.writeHead(404); return res.end('Not found'); } res.writeHead(200, { 'Content-Type': mime[path.extname(f)] || 'application/octet-stream' }); res.end(d); });
-}).listen(PORT, HOST, () => console.log(`FloodSense prototype listening on http://${HOST}:${PORT} (LAN access enabled)`));
+}).listen(PORT, HOST, function () { const address = this.address(); console.log(`FloodSense prototype listening on http://${HOST}:${address.port} (LAN access enabled)`); });

@@ -16,7 +16,7 @@ button,select,input,textarea{font:inherit}
 .btn.sos{background:var(--bad);border-color:var(--bad);color:#fff;font-weight:700}.btn.ok{background:var(--ok);color:#fff;border-color:var(--ok)}
 #demo{background:var(--warn-soft);color:#6a4700;border-bottom:1px solid #e8c66c;text-align:center;font-weight:700;padding:6px 12px;font-size:13px}
 main{flex:1;display:grid;grid-template-columns:minmax(0,1fr) 440px;min-height:0}
-#map{height:100%;min-height:300px;background:#dfe8ef}
+#map{height:100%;min-height:300px;background:#dfe8ef;position:relative}#map-status{position:absolute;top:12px;left:12px;right:12px;z-index:500;margin:0}
 aside{display:flex;flex-direction:column;min-height:0;border-left:1px solid var(--line);background:var(--surface)}
 nav{display:grid;grid-template-columns:repeat(5,minmax(0,1fr));border-bottom:1px solid var(--line);background:var(--surface)}
 nav button{min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;background:none;border:0;border-bottom:3px solid transparent;color:var(--mut);padding:10px 5px;cursor:pointer;font-size:13px}
@@ -42,14 +42,14 @@ input:focus,select:focus,textarea:focus{border-color:var(--info);outline:2px sol
 .stale{background:var(--warn-soft);color:#6a4700;border:1px solid #e3c36c;padding:8px 10px;border-radius:6px;font-size:13px;margin:7px 0}
 #toast{position:fixed;left:50%;transform:translateX(-50%);bottom:22px;z-index:2000;background:var(--tx);color:#fff;border:1px solid #405367;border-radius:6px;padding:10px 14px;max-width:92vw;display:flex;gap:10px;align-items:center}
 @media(max-width:860px){body{overflow:auto}main{grid-template-columns:1fr;grid-template-rows:minmax(280px,42vh) minmax(0,1fr);min-height:calc(100vh - 100px)}aside{border-left:0;border-top:1px solid var(--line);min-height:420px}nav{grid-template-columns:repeat(5,1fr);order:2;border-top:1px solid var(--line);border-bottom:0}aside{flex-direction:column}#panel{order:1}.clock{display:none}}
-@media(max-width:480px){header{padding:8px 12px;gap:9px;flex-wrap:nowrap}.logo{font-size:18px}#city{display:none}#citySelect{flex:1;min-width:0;max-width:none;font-size:12px;padding:6px}.sp{display:none}.net{font-size:11px}nav button{font-size:11px;padding:9px 2px}.btn{min-height:36px;padding:7px 10px}}
+@media(max-width:480px){header{padding:8px 12px;gap:9px;flex-wrap:nowrap}.logo{font-size:18px}#city{display:none}.sp{display:none}.net{font-size:11px}nav button{font-size:11px;padding:9px 2px}.btn{min-height:36px;padding:7px 10px}}
 @media(prefers-reduced-motion:reduce){*{transition:none!important}}
 </style></head><body>
-<header><div class="logo">Flood<b>Sense</b></div><span class="mut" id="city">Guayaquil</span><label for="citySelect" class="sr-only">Demonstration city</label><select id="citySelect" aria-label="Demonstration city"><option value="gye">Guayaquil, Ecuador</option><option value="maa">Chennai, Tamil Nadu, India</option></select><span class="sp"></span>
+<header><div class="logo">Flood<b>Sense</b></div><span class="mut" id="city">Guayaquil</span><span class="sp"></span>
 <span class="clock" id="clock"></span><span id="net" class="tag t-low">online</span>
 <button class="btn" id="lang" aria-label="Language">EN</button><span id="who" class="mut"></span></header>
 <div id="demo" role="alert">DEMO DATA — NOT FOR REAL EMERGENCY USE · DATOS DE DEMOSTRACIÓN — NO USAR EN EMERGENCIAS REALES</div>
-<main><div id="map" role="application" aria-label="Map"></div>
+<main><div id="map" role="application" aria-label="Map"><div id="map-status" class="stale" role="status" aria-live="polite" hidden></div></div>
 <aside><nav id="nav" role="tablist"></nav><section id="panel" aria-live="polite"></section></aside></main>
-<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" onerror="window.__leafletLoadFailed=true"></script>
 <script src="app.js"></script></body></html>
