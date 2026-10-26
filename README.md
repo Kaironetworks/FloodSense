@@ -1,272 +1,711 @@
-<div align="center">
+::: {align="center"}
+# FloodSense
 
-# 🌊 FloodSense
+### Turning flood uncertainty into clearer, explainable decisions.
 
-### Know which road is safe before the water decides for you.
+**A map-first flood-resilience and community-response prototype for
+Guayaquil, Ecuador**
 
-Flood-safety decision-support map for **Guayaquil, Ecuador** · HACK2IMPACT 2026 · Track 1
+[Problem](#the-problem) · [Solution](#the-floodsense-approach) ·
+[Architecture](#system-architecture) · [Run locally](#run-locally) ·
+[API](#api-overview) · [Limitations](#honest-scope-and-limitations)
+:::
 
-![Node](https://img.shields.io/badge/Node.js-18%2B-339933?logo=node.js&logoColor=white)
-![Dependencies](https://img.shields.io/badge/npm%20dependencies-0-2FA36B)
-![Leaflet](https://img.shields.io/badge/Map-Leaflet-199900?logo=leaflet&logoColor=white)
-![Routing](https://img.shields.io/badge/Routing-OSRM-0E7C86)
-![License](https://img.shields.io/badge/License-MIT-blue)
-![Data](https://img.shields.io/badge/Sensor%20data-SIMULATED-F2A541)
+------------------------------------------------------------------------
 
-[Problem](#-problem-statement) · [Solution](#-solution) · [Architecture](#-architecture) · [Quick Start](#-quick-start) · [API](#-api-reference) · [Limits](#-honest-status) · [Team](#-team)
+> **DEMO ONLY --- NOT FOR REAL EMERGENCY USE.**\
+> FloodSense is a hackathon prototype. Its sensor readings, sample
+> alerts, susceptibility areas, reports, and facilities may be simulated
+> or fictional. It is not an official warning service, does not verify
+> real-time flood conditions, and does not dispatch emergency services.
+> In a real emergency, contact the relevant local emergency service
+> directly.
 
-</div>
+## At a glance
 
-> ⚠️ **DEMO DATA, NOT FOR REAL EMERGENCY USE.** Sensor readings, zones, alerts and facilities are simulated or fictional samples. In a real emergency call **911**.
+FloodSense explores how a city-facing digital tool could help residents
+and response teams make better-informed decisions during heavy rain and
+possible urban flooding. It brings map-based situational awareness,
+transparent risk explanations, community reports, route alternatives,
+service information, and a privacy-conscious SOS workflow into one web
+interface.
 
----
+  ----------------------------------- -----------------------------------
+  **Challenge context**               Heavy-rain and flood resilience in
+                                      Guayaquil, Ecuador
 
-## 🎯 Problem Statement
+  **Product type**                    Web-based decision-support
+                                      prototype
 
-<img src="docs/problem-statement.png" alt="Official Track 1 problem statement" width="620">
+  **Frontend**                        HTML, CSS, vanilla JavaScript,
+                                      Leaflet
 
-> *How can we develop smart solutions that help Guayaquil anticipate and respond better to heavy rains?*
+  **Backend**                         Node.js built-in HTTP server
 
-Guayaquil sits near sea level on the Guayas River estuary, and three problems compound during storms:
+  **Persistence**                     Local JSON file (`data/db.json`)
 
-| 🌊 Tidal locking | 🌧️ Sudden downpours | 🚧 Blocked arterials |
-|---|---|---|
-| High tides push up the river, so storm canals cannot drain. | Rain can exceed drainage capacity within about 30 minutes. | Av. 9 de Octubre, Barcelona and Urdesa flood, cutting hospital access. |
+  **Runtime**                         Node.js 18 or newer
 
-**The gap:** warnings are city-wide, and navigation apps do not know which street is underwater. Residents and ambulances need street-level, explainable information.
+  **Dependencies**                    No npm package installation
+                                      required by the current prototype
 
----
+  **Operating mode**                  Demonstration data; selected public
+                                      map/search/routing services require
+                                      internet access
+  ----------------------------------- -----------------------------------
 
-## 💡 Solution
+## The problem
 
-FloodSense turns scattered signals into one map that answers: **"Is this place risky right now, and what is the safer way around it?"**
+Heavy rain can turn a routine journey into a safety decision. Water
+accumulates unevenly, road conditions change, drainage and elevation
+affect local vulnerability, and information can be fragmented across
+official notices, local observations, and service directories.
 
-| | Feature | What it does |
-|---|---|---|
-| 🧮 | **Explainable risk score** | Combines official warning, flood-susceptibility zone, verified reports and nearest sensor. Every score lists its reasons and the data that is *missing*. |
-| 🧭 | **Flood-aware routing** | Sensor-marked impassable segments are avoided; a safer alternative is returned. OSRM street routes are scored against zones and verified hazards. |
-| 📣 | **Community reports** | Validation, rate limit, duplicates count as corroboration, moderators verify or reject. |
-| 🆘 | **SOS with privacy** | Private storage, resident access code, responder status updates, false-alarm cancel. SOS coordinates never appear in public endpoints. |
-| 🏥 | **Services directory** | Distance-sorted, with directions; unverified entries are labelled. |
-| 🌐 | **Inclusive by design** | Spanish / English, offline-stale banner using cached data with its original timestamp. |
+For residents, several practical questions arise:
 
-<img src="docs/ui-concept.png" alt="UI concept: flood map and alternate routes" width="620">
+-   Which areas have reported hazards or known flood susceptibility?
+-   What information supports the displayed risk assessment---and what
+    information is missing?
+-   Is there a route alternative that avoids a known, modeled hazard?
+-   Can a resident submit a location-based observation for review?
+-   How can a person request help while keeping sensitive incident
+    details out of public feeds?
+-   How can a prototype communicate uncertainty instead of presenting
+    incomplete information as fact?
 
-<sub>Interface concept: layered flood map and route options ranked by risk.</sub>
+The underlying challenge is not simply to place markers on a map. It is
+to organize imperfect information into an interface that is
+understandable, transparent about uncertainty, and designed around safer
+decisions.
 
----
+## The FloodSense approach
 
-## 🏗️ Architecture
+FloodSense combines several connected workflows in a single map-centered
+application.
 
-<img src="docs/architecture.png" alt="Track 1 target architecture" width="560">
+### 1. Map-based situational awareness
 
-<sub>Target architecture. The prototype implements the Node API, risk engine, routing and data layers with a lighter stack, shown below.</sub>
+The map is the main workspace. Users can inspect the demonstration
+geography, view available layers, search for places, use GPS where
+browser permissions and device support allow it, and select a point for
+an assessment.
 
-### Prototype data flow
+### 2. Explainable risk assessment
 
-```mermaid
-flowchart LR
-  subgraph Client["🖥️ Client (vanilla JS + Leaflet)"]
-    U[Residents]
-    M[Moderators]
-    R[Responders]
-  end
-  subgraph API["⚙️ Node.js API (no dependencies)"]
-    RISK[Risk engine<br/>rules-0.2]
-    ROUTE[Sensor-graph router]
-    REP[Reports + moderation]
-    SOS[SOS vault]
-  end
-  DB[(JSON store<br/>data/db.json)]
-  subgraph EXT["🌍 External"]
-    OSM[OSM tiles]
-    OSRM[OSRM routing]
-    NOM[Nominatim search]
-    PLAN[INAMHI · SGR · Flood Hub<br/>planned]
-  end
-  U & M & R -->|REST / JSON| API
-  API --> DB
-  Client --> OSM & OSRM & NOM
-  PLAN -.->|next step| API
+The prototype uses a rule-based assessment (`rules-0.2`) that considers
+available signals such as:
+
+-   Demonstration warning information.
+-   Sample flood-susceptibility zones.
+-   Community reports, including verification state.
+-   The nearest simulated sensor reading.
+
+The application presents reasons and missing-data information alongside
+an **estimated risk score**. The score is not a calibrated probability.
+When evidence is insufficient, the intended behavior is to say so rather
+than invent certainty.
+
+### 3. Sensor-informed route demonstration
+
+Five deterministic Guayaquil sensor nodes provide repeatable test inputs
+for a heavy-rain scenario. Their readings and derived states are
+explicitly simulated and unverified.
+
+The route API includes a reproducible demonstration in which the
+sensor-marked `Av. 9 de Octubre` segment is impassable and an
+alternative toward the `Av. Barcelona` axis remains available. This
+makes it possible to demonstrate a route-planning concept under
+controlled conditions.
+
+The broader route planner can use public OSRM road geometry and score
+alternatives against modeled susceptibility areas and verified hazards.
+If the external routing service is unavailable, the application may use
+a straight-line fallback that must be understood as **not a
+risk-optimized road route**.
+
+### 4. Community observations with moderation
+
+Residents can submit location-based reports. The prototype includes
+validation, rate limiting, duplicate/corroboration handling, moderation
+actions, report history, and audit entries. New submissions are not
+automatically equivalent to verified ground truth.
+
+### 5. SOS workflow with privacy boundaries
+
+The SOS workflow records a request, provides an access code for the
+resident to check its status, and supports responder status updates
+through role-restricted operations. Public incident listings are
+designed not to expose private SOS references and sensitive incident
+details.
+
+**Important:** this is a software workflow demonstration only. It is not
+connected to official emergency dispatch, and no responder is
+automatically notified by a real emergency service.
+
+### 6. Community and service information
+
+The prototype includes a service directory, community chat,
+community-reported shop status, a guide, and an operations area for
+demonstration roles and workflows. Sample facilities and community
+content are not verified live information.
+
+### 7. Bilingual and degraded-connectivity cues
+
+The interface includes English and Spanish labels and displays
+offline/stale-data cues using cached copies with their original
+timestamps where supported. Some core map, search, and routing
+experiences still rely on external services and an internet connection.
+
+## Design principles
+
+FloodSense is organized around five principles:
+
+1.  **Explain, do not just score.** Show the signals behind an
+    assessment and disclose missing data.
+2.  **Separate observation from verification.** A community report,
+    sample polygon, simulated sensor, and verified incident are
+    different evidence types.
+3.  **Avoid false reassurance.** A route recommendation is not a
+    guarantee of safety.
+4.  **Protect sensitive incident information.** SOS details should not
+    appear in public feeds.
+5.  **Make limitations visible.** A prototype should identify simulated,
+    unavailable, stale, and unverified information instead of implying
+    operational readiness.
+
+## System architecture
+
+``` text
+┌─────────────────────────────────────────────────────┐
+│                   Browser UI                        │
+│ HTML · CSS · Vanilla JavaScript · Leaflet            │
+│ Map · Layers · Assessments · Reports · SOS · Routes  │
+└─────────────────────────┬───────────────────────────┘
+                          │ HTTP / JSON
+                          ▼
+┌─────────────────────────────────────────────────────┐
+│                 Node.js HTTP server                 │
+│ Routing · Validation · Demo sessions · Permissions  │
+│ Risk rules · Sensor scenario · Route response       │
+└─────────────────────────┬───────────────────────────┘
+                          │ Read / write
+                          ▼
+┌─────────────────────────────────────────────────────┐
+│                Local JSON persistence               │
+│                   data/db.json                      │
+└─────────────────────────────────────────────────────┘
+
+External browser-side / public services (when reachable):
+OpenStreetMap tiles · Leaflet CDN · Nominatim search · OSRM routing
 ```
 
-### Technology stack
+### Component responsibilities
 
-| Tier | Prototype (built) | Target (planned) |
-|---|---|---|
-| Client | Vanilla JS, Leaflet, HTML/CSS | React, Tailwind, Leaflet |
-| Backend | Node.js 18, built-in `http` | Express / FastAPI |
-| Data | JSON file | PostgreSQL + PostGIS |
-| Routing | Sensor graph + OSRM public demo | Self-hosted OSRM / NetworkX |
-| Auth | Demo role picker, in-memory tokens | Supabase Auth |
-| Hosting | Local | Vercel (frontend) + Render (API) |
+  -----------------------------------------------------------------------
+  Component                           Responsibility
+  ----------------------------------- -----------------------------------
+  `public/index.html`                 Application shell, UI structure,
+                                      styling, and Leaflet inclusion
 
----
+  `public/app.js`                     Client-side interactions, map
+                                      behavior, API calls, rendering,
+                                      language labels, and UI state
 
-## 🔬 How It Works
+  `server.js`                         HTTP server, API routing,
+                                      validation, demo-role sessions,
+                                      risk assessment, deterministic
+                                      sensor and route scenarios, and
+                                      persistence
 
-### 1. Explainable risk score (`rules-0.2`)
+  `data/db.json`                      Local prototype data such as
+                                      reports, sample alerts, zones,
+                                      facilities, shops, chat, and SOS
+                                      records
 
-```mermaid
-pie showData title Max points per signal (total capped at 100)
-  "Official warning" : 45
-  "Susceptibility zone" : 30
-  "Verified reports" : 25
-  "Sensor water depth" : 20
+  `data/uploads/`                     Uploaded report-image storage used
+                                      by the prototype
+
+  `test.js`                           API smoke tests for core
+                                      assessment, sensor, routing,
+                                      report, SOS, permission, shop,
+                                      chat, and admin flows
+  -----------------------------------------------------------------------
+
+### Data and trust model
+
+FloodSense deliberately distinguishes between information sources and
+states:
+
+-   **Simulated sensor data:** deterministic inputs for repeatable
+    demonstrations; not physical sensor telemetry.
+-   **Sample alerts and zones:** illustrative prototype records; not a
+    live official feed or authoritative street-level boundary.
+-   **Community reports:** user-submitted observations that may require
+    corroboration or moderation.
+-   **Verified reports:** reports that passed the prototype's moderation
+    workflow; this label does not independently guarantee real-world
+    accuracy.
+-   **Unverified facilities and shop status:** directory/community
+    information that may be outdated or fictional.
+-   **External routing geometry:** provided by a public routing service
+    when available; route geometry alone does not prove that a road is
+    passable.
+
+## Technology stack
+
+  -----------------------------------------------------------------------
+  Technology                          How it is used
+  ----------------------------------- -----------------------------------
+  **HTML5 / CSS**                     Semantic structure, responsive
+                                      layout, status cues, and accessible
+                                      controls
+
+  **Vanilla JavaScript**              Frontend interactions and API
+                                      integration without a frontend
+                                      framework
+
+  **Leaflet**                         Interactive map, layers, markers,
+                                      and route visualization
+
+  **Node.js built-in modules**        HTTP server, file access,
+                                      cryptographic random values for
+                                      demo tokens, and filesystem
+                                      persistence
+
+  **JSON**                            Local persistence and API
+                                      request/response format
+
+  **OpenStreetMap**                   Base-map tiles and geographic
+                                      context, subject to service
+                                      availability and attribution
+                                      requirements
+
+  **Nominatim**                       Place search where available;
+                                      subject to public-service usage
+                                      policies
+
+  **OSRM public demo server**         Road geometry and route
+                                      alternatives where available; no
+                                      service-level guarantee
+  -----------------------------------------------------------------------
+
+The current repository does **not** implement a React/TypeScript
+frontend, PostgreSQL/PostGIS database, Prisma, a production
+authentication provider, a live IoT ingestion pipeline, or a trained
+machine-learning model. The prototype's assessment is rule-based.
+
+## Run locally
+
+### Requirements
+
+-   Node.js **18 or newer**
+-   A modern browser
+-   Internet access for external map tiles, Leaflet CDN assets, place
+    search, and public routing. Some interface and local API behavior
+    can still be explored without every external service being
+    available.
+
+### Start the application
+
+Clone or download the repository, open a terminal in the project
+directory, then run:
+
+``` bash
+node server.js
 ```
 
-| Level | Score |
-|---|---|
-| 🟡 Moderate | 20+ |
-| 🟠 High | 45+ |
-| 🔴 Critical | 70+ |
-| ⚪ Insufficient data | no signals available |
+Open:
 
-It is labelled **"Estimated risk score (not a probability)"**, and the response includes a `missing` list so absence of data is never read as safety.
-
-### 2. Safe routing
-
-```mermaid
-flowchart LR
-  A[Av. 9 de Octubre] -. "❌ floodway blocked" .-> B[Av. Barcelona]
-  A -->|"✅ 2.8 km"| C[Urdesa]
-  C -->|"✅ 3.0 km"| B
+``` text
+http://localhost:3000
 ```
 
-1. Model roads as a graph between the five sensor nodes.
-2. Mark a segment impassable when its sensor reports critical depth.
-3. Run a shortest-path search on the remaining graph.
-4. For street routes, rank OSRM alternatives against susceptibility zones and verified hazards.
+Alternatively, use the existing npm script:
 
-**Heavy-rain scenario:** tide 2.9 m, rain 42 mm. The 9 de Octubre floodway is blocked, so the route goes via Urdesa (5.8 km).
-
-### 3. Simulated sensor nodes
-
-| Node | Location | Elevation | Normal depth | Heavy-rain depth |
-|---|---|---|---|---|
-| `GYE-URDESA` | Urdesa Corridor | 2 m | 0.35 m | 0.80 m |
-| `GYE-HOSP-IESS` | Hospital IESS | 4 m | 0.12 m | 0.35 m |
-| `GYE-DOWNTOWN-9OCT` | Av. 9 de Octubre | 1.5 m | 0.62 m | 1.10 m |
-| `GYE-SINAI-VULN` | Monte Sinai | 1 m | 1.25 m | 1.65 m |
-| `GYE-BARCELONA` | Av. Barcelona Axis | 3 m | 0.28 m | 0.65 m |
-
----
-
-## 🚀 Quick Start
-
-**Requirements:** Node.js 18+. No `npm install` needed (zero dependencies). Internet is needed in the browser for map tiles, Leaflet, search and routing.
-
-```bash
-git clone https://github.com/Kaironetworks/FloodSense.git
-cd FloodSense
-node server.js        # http://localhost:3000
-node test.js          # API checks: auth, validation, SOS privacy, simulated sensors
+``` bash
+npm start
 ```
 
-Use another port with `PORT=4000 node server.js`.
+No `npm install` is required for the current zero-dependency Node.js
+server.
 
-### 🎬 Demo walkthrough (about 2 minutes)
+### Run the smoke tests
 
-1. Open `http://localhost:3000`, switch to the **Ops** tab and sign in with a demo role.
-2. Run the **guided 6-step scenario**: report → corroborate → verify → route → SOS → responder acknowledgement.
-3. Click any point on the map to see its estimated risk score and reasons.
-4. Plan a route and compare alternatives; try the heavy-rain sensor scenario below.
-
-```bash
-curl "http://localhost:3000/api/flood/sensors?scenario=heavy"
-curl "http://localhost:3000/api/flood/route?from=GYE-DOWNTOWN-9OCT&to=GYE-BARCELONA&scenario=heavy"
-curl "http://localhost:3000/api/flood/assessments?lat=-2.1944&lng=-79.8883"
+``` bash
+node test.js
 ```
 
----
+or:
 
-## 🔌 API Reference
-
-| Area | Endpoints |
-|---|---|
-| Health and sources | `GET /api/health` · `GET /api/sources/status` |
-| Flood data | `GET /api/flood/zones` · `GET /api/flood/sensors` · `GET /api/flood/route` · `GET /api/flood/assessments` |
-| Alerts and incidents | `GET /api/alerts` · `GET /api/incidents` |
-| Community reports | `POST /api/reports` · `POST /api/reports/:id/verify` · `POST /api/reports/:id/resolve` |
-| SOS | `POST /api/sos` · `GET /api/sos/:id` · `POST /api/sos/:id/cancel` |
-| Responders | `GET /api/responder/incidents` · `PATCH /api/responder/incidents/:id/status` |
-| Services | `GET /api/shops` · `GET /api/safe-locations` |
-| Admin | `GET /api/admin/overview` · `GET /api/admin/audit-logs` · `POST /api/admin/reset-demo` |
-
-Sample sensor payload:
-
-```json
-{
-  "id": "GYE-SINAI-VULN",
-  "name": "Monte Sinai",
-  "elevationM": 1,
-  "waterDepthM": 1.65,
-  "roadStatus": "IMPASSABLE",
-  "dataStatus": "SIMULATED_UNVERIFIED"
-}
+``` bash
+npm test
 ```
 
----
+The test script starts a temporary server on port `3999` and exercises
+multiple API workflows. **Run tests only with demo/test data and inspect
+the script before running it against valuable local state:** the current
+test script temporarily removes and restores `data/db.json`. Do not run
+it against a live presentation session or data you cannot restore. If a
+test is interrupted, verify that the original database file is intact.
 
-## 📁 Project Structure
+### Troubleshooting
 
-```text
-FloodSense/
-├── server.js          # Node HTTP server: API, risk engine, router, SOS
-├── test.js            # API test suite
-├── package.json       # scripts only, zero dependencies
-├── public/
-│   ├── index.html     # app shell
-│   ├── app.js         # map, panels, ES/EN, offline banner
-│   └── samples/       # sample SVG assets
-├── data/
-│   ├── db.json        # demo database (JSON)
-│   └── uploads/       # report photo placeholders
-├── docs/              # architecture, UI concept, problem statement images
-├── LICENSE            # MIT
-└── README.md
+-   **Port 3000 is occupied:** stop only the process you know belongs to
+    an older FloodSense instance, or start with a different port using
+    the `PORT` environment variable. On PowerShell:
+
+    ``` powershell
+    $env:PORT=3001
+    node server.js
+    ```
+
+    Then open `http://localhost:3001`.
+
+-   **The map is blank:** check internet access, browser developer
+    tools, and whether Leaflet or tile requests are blocked. The base
+    map and Leaflet are loaded from external services.
+
+-   **Search or routing does not respond:** Nominatim and the OSRM
+    public demo server are external dependencies and can be unavailable
+    or rate-limited.
+
+-   **A route is shown as a straight line:** treat it as a fallback
+    visualization, not as a road route optimized for flood risk.
+
+-   **Data appears stale/offline:** review the displayed timestamp and
+    source status. Do not interpret cached data as current conditions.
+
+## Demonstration scenarios
+
+### Scenario A --- Heavy rain and an alternative route
+
+1.  Open the Guayaquil view.
+2.  Enable or inspect the demo sensor layer.
+3.  Select the heavy-rain sensor route demonstration.
+4.  Explain that the `Av. 9 de Octubre` sensor node is marked impassable
+    in this deterministic scenario.
+5.  Show the alternative route and the explanation of the illustrative
+    elevation-aware graph.
+6.  State clearly that the graph and readings are simulated, and the
+    route is not a guarantee of safety.
+
+The API scenario is:
+
+``` text
+GET /api/flood/sensors?scenario=heavy
+GET /api/flood/route?from=GYE-DOWNTOWN-9OCT&to=GYE-BARCELONA&scenario=heavy
 ```
 
----
+An intentionally unreachable route scenario is also available for
+testing honest failure handling:
 
-## ✅ Honest Status
+``` text
+GET /api/flood/route?from=GYE-DOWNTOWN-9OCT&to=GYE-SINAI-VULN&scenario=heavy
+```
 
-| Item | Status |
-|---|---|
-| Map, risk score, routing, reports, SOS, ES/EN, offline banner | ✅ Working |
-| 5 simulated sensor nodes with heavy-rain scenario | ✅ Working (simulated, labelled) |
-| INAMHI, SGR flood-susceptibility MapServer, Google Flood Hub | ⏳ Not connected (`not_configured`) |
-| Zones, alerts, facilities | ⚠️ Fictional samples |
-| Database | ⚠️ JSON file, not PostgreSQL / PostGIS |
-| Auth | ⚠️ Demo role picker, no passwords / CSRF / 2FA |
-| Photos, EXIF stripping, push / email / SMS, live updates | ⏳ Not implemented |
+### Scenario B --- Community report to moderated information
 
-## 🛣️ Roadmap
+1.  Submit a location-based report.
+2.  Show that it begins in an awaiting-verification state.
+3.  Sign in using the prototype's demo role selector as a moderator.
+4.  Verify or reject the report.
+5.  Explain that moderation records the workflow state; it does not
+    independently establish ground truth.
 
-- [ ] Query the SGR `Susceptibilidad_de_Inundaciones` MapServer (`?f=geojson`) and load polygons into PostGIS
-- [ ] INAMHI adapter and Flood Hub adapter (approved key kept in server env only)
-- [ ] Open-Meteo 1 to 3 hour rainfall forecast feed
-- [ ] Replace demo auth with Supabase Auth; move to Postgres; add uploads and live updates
-- [ ] SMS-style low-bandwidth alerts for Isla Trinitaria and Monte Sinai
+### Scenario C --- SOS privacy and status workflow
 
----
+1.  Explain the emergency disclaimer before interacting with the form.
+2.  Create a demonstration SOS with non-sensitive test content.
+3.  Show the resident access-code/status workflow.
+4.  Switch to the responder demonstration role and show the permitted
+    status update.
+5.  Explain that public incident endpoints are designed to exclude
+    private SOS details.
+6.  Explicitly state that official emergency dispatch is not connected.
 
-## 👥 Team
+Do not use real personal or emergency information in a public demo.
 
-| Role | Name |
-|---|---|
-| 🧑‍💻 Team Lead and repository owner | **Rithish R** |
-| 🧑‍💻 Team Member | **Guhan S** |
+## API overview
 
-Built for **HACK2IMPACT 2026**, IEEE-HKN Founders Day Hackathon (Nu Eta, Sri Sairam Engineering College × Nu Zeta, ESPOL).
+The API uses JSON. Protected endpoints use a bearer token returned by
+the demo login endpoint. Exact response fields and validation rules
+should be checked in `server.js` and `test.js`.
 
-## 🙏 Acknowledgements and Citations
+  ---------------------------------------------------------------------------------------------------------------------------
+  Method                  Endpoint                                                                    Purpose
+  ----------------------- --------------------------------------------------------------------------- -----------------------
+  `GET`                   `/api/health`                                                               Health and
+                                                                                                      operating-mode check
 
-- Map data © [OpenStreetMap](https://www.openstreetmap.org/copyright) contributors; tiles and search by OSM and Nominatim
-- Routing by the public [OSRM](https://project-osrm.org/) demo server (no SLA)
-- Maps rendered with [Leaflet](https://leafletjs.com/)
-- Track brief and problem statement: HACK2IMPACT 2026 handbook
+  `POST`                  `/api/login`                                                                Create a prototype role
+                                                                                                      session
 
-## 📄 License
+  `GET`                   `/api/sources/status`                                                       Report
+                                                                                                      source/configuration
+                                                                                                      status
 
-Released under the [MIT License](LICENSE).
+  `GET`                   `/api/alerts`                                                               Read demonstration
+                                                                                                      alerts
+
+  `GET`                   `/api/flood/zones`                                                          Read illustrative
+                                                                                                      susceptibility polygons
+
+  `GET`                   `/api/flood/sensors?scenario=heavy`                                         Read deterministic
+                                                                                                      simulated sensor nodes
+
+  `GET`                   `/api/flood/assessments?lat=-2.25&lng=-79.9`                                Assess a geographic
+                                                                                                      point
+
+  `GET`                   `/api/flood/route?from=GYE-DOWNTOWN-9OCT&to=GYE-BARCELONA&scenario=heavy`   Run the deterministic
+                                                                                                      heavy-rain route
+                                                                                                      scenario
+
+  `GET`                   `/api/incidents`                                                            Read public community
+                                                                                                      incident reports
+
+  `POST`                  `/api/reports`                                                              Submit a community
+                                                                                                      report
+
+  `POST`                  `/api/reports/:id/verify`                                                   Moderator/admin
+                                                                                                      verification or
+                                                                                                      rejection
+
+  `POST`                  `/api/reports/:id/resolve`                                                  Resolve a report
+                                                                                                      through the permitted
+                                                                                                      role
+
+  `GET`                   `/api/news`                                                                 Read official-link and
+                                                                                                      video configuration
+
+  `GET` / `POST`          `/api/chat`                                                                 Read or submit
+                                                                                                      community messages
+
+  `DELETE`                `/api/chat/:id`                                                             Delete a message with
+                                                                                                      required permissions
+
+  `GET`                   `/api/shops`                                                                Read community-reported
+                                                                                                      shop status
+
+  `POST`                  `/api/shops`                                                                Submit a shop entry
+
+  `POST`                  `/api/shops/:id/status`                                                     Update a shop's
+                                                                                                      reported status
+
+  `GET`                   `/api/safe-locations`                                                       Read the prototype's
+                                                                                                      facility directory
+
+  `POST`                  `/api/sos`                                                                  Create an SOS workflow
+                                                                                                      record
+
+  `GET`                   `/api/sos/:id?code=...`                                                     Retrieve status using
+                                                                                                      the resident access
+                                                                                                      code or an authorized
+                                                                                                      role
+
+  `POST`                  `/api/sos/:id/cancel`                                                       Cancel an SOS using the
+                                                                                                      required access code
+
+  `GET`                   `/api/responder/incidents`                                                  Read responder-only
+                                                                                                      incident listings
+
+  `PATCH`                 `/api/responder/incidents/:id/status`                                       Update incident status
+                                                                                                      as an authorized
+                                                                                                      responder/admin
+
+  `GET`                   `/api/admin/overview`                                                       Read operational
+                                                                                                      overview with required
+                                                                                                      role
+
+  `GET`                   `/api/admin/audit-logs`                                                     Read audit logs as an
+                                                                                                      admin
+
+  `POST`                  `/api/admin/reset-demo`                                                     Reset demonstration
+                                                                                                      data as an admin
+  ---------------------------------------------------------------------------------------------------------------------------
+
+The application also serves the frontend and uploaded report images.
+This table is a practical overview, not a substitute for the
+implementation's actual request validation and response contracts.
+
+## Security and privacy considerations
+
+The prototype demonstrates several useful boundaries, but it is not a
+production security architecture.
+
+### Present in the prototype
+
+-   Role checks on selected moderation, responder, and administrative
+    operations.
+-   Short-lived-in-process demo session tokens.
+-   Input validation and sanitization in several submission paths.
+-   Rate limits on selected endpoints.
+-   A resident access-code workflow for SOS status.
+-   Separation of private SOS details from the public incident listing.
+-   Audit entries for selected operations.
+
+### Not production-ready
+
+-   The role picker is a demonstration mechanism, not real identity
+    verification.
+-   Session tokens are held in memory; production-grade account
+    security, durable sessions, and revocation are not implemented.
+-   The JSON file is not a concurrent, transactional database.
+-   Production-grade CSRF protection, 2FA, full security monitoring, and
+    formal security review are not implemented.
+-   The prototype has not been established as compliant with
+    emergency-management, privacy, or government procurement
+    requirements.
+-   The public map/search/routing dependencies have their own
+    availability, terms, and rate limits.
+
+Do not store real emergency records or personal information in this
+prototype.
+
+## Research and data integration status
+
+FloodSense's architecture is designed to keep data provenance visible,
+but **the current implementation does not connect the following sources
+as live operational feeds**:
+
+  -----------------------------------------------------------------------
+  Source / capability                 Current status
+  ----------------------------------- -----------------------------------
+  INAMHI official weather/flood data  Not connected
+
+  Ecuador SGR flood-susceptibility    Not connected; sample polygons are
+  MapServer                           used
+
+  Google Flood Hub                    Not connected
+
+  ATM / Segura traffic or             Not connected
+  road-closure feeds                  
+
+  Physical IoT sensors or telemetry   Not implemented
+  ingestion                           
+
+  Live emergency-service dispatch     Not connected
+
+  Verified real-time facility         Not connected
+  availability                        
+
+  Official live alert stream          Not connected
+  -----------------------------------------------------------------------
+
+The sample alerts, zones, and facilities are illustrative. Their
+presence in the interface does not mean that the corresponding official
+service has been integrated.
+
+### A credible path toward a research-backed deployment
+
+A production-oriented next phase would require a source-by-source
+integration and validation effort:
+
+1.  **Official source discovery:** confirm data availability, access
+    permissions, update cadence, spatial coverage, licensing, and terms
+    for each intended source.
+2.  **Provenance metadata:** store the source, observation time,
+    retrieval time, geographic coverage, confidence/quality notes, and
+    expiry for each observation.
+3.  **Geospatial data pipeline:** validate and normalize geometries and
+    coordinate systems; use a geospatial database such as
+    PostgreSQL/PostGIS when operational requirements justify it.
+4.  **Sensor ingestion:** define device identity, authenticated
+    transport, measurement units, calibration, missing-data rules,
+    outlier detection, and telemetry freshness.
+5.  **Risk-model validation:** compare model outputs with documented
+    historical events and field observations; evaluate false negatives,
+    false positives, and geographic bias.
+6.  **Routing validation:** combine road geometry with verified closures
+    and current hazard evidence; test unreachable routes and stale-data
+    behavior; never equate shortest path with safest path.
+7.  **Operational readiness:** establish security review, access
+    controls, backups, monitoring, incident response, uptime
+    expectations, and human responsibility for decisions.
+8.  **Field validation:** conduct supervised testing with local
+    stakeholders before making any public safety claim.
+
+These are proposed next steps, not capabilities currently implemented.
+
+## Current limitations and roadmap
+
+### Current prototype limitations
+
+-   Deterministic simulated sensors rather than physical IoT telemetry.
+-   Rule-based estimated risk rather than a trained or validated
+    predictive model.
+-   Sample flood zones, alerts, reports, and facilities.
+-   Local JSON persistence rather than a production database.
+-   Demo role selection rather than production authentication.
+-   External map, geocoding, and routing dependencies.
+-   No real emergency dispatch, push notification, SMS/email alert
+    pipeline, or server-sent live update stream.
+-   No guarantee that a displayed route is safe or passable.
+-   Chennai is a secondary interface/location concept, not a live
+    Chennai flood-monitoring integration. Do not treat Guayaquil demo
+    records as Chennai data.
+
+### Proposed roadmap
+
+**Stage 1 --- Prototype reliability** - Strengthen automated tests for
+risk assessment, route avoidance, data isolation, SOS privacy, and
+permission boundaries. - Improve clear failure states for unavailable
+external services and unreachable routes. - Preserve source labels and
+timestamps throughout the UI.
+
+**Stage 2 --- Trusted data** - Integrate approved official data sources
+with attribution and freshness checks. - Replace sample polygons and
+facilities with validated datasets. - Add robust geospatial storage and
+import validation.
+
+**Stage 3 --- Operational resilience** - Implement secure identity,
+authorization, monitoring, backups, and recovery. - Add authenticated
+sensor ingestion and a documented device/data protocol. - Validate
+routing and risk logic against real historical and field evidence.
+
+**Stage 4 --- Supervised pilots** - Work with local authorities,
+emergency responders, accessibility experts, and community
+organizations. - Evaluate usability, false alarms, missed hazards, and
+the consequences of incorrect guidance. - Only consider operational use
+after formal validation, governance, and safety review.
+
+## Contributing
+
+Contributions that improve reliability, clarity, accessibility, testing,
+provenance, and safety are welcome.
+
+Before submitting a change:
+
+1.  Explain the user problem or technical defect.
+2.  Keep changes focused and preserve existing workflows.
+3.  Add or update tests for behavioral changes.
+4.  Distinguish real data from simulated, stale, and unverified
+    information.
+5.  Never introduce a claim of live integration without a working,
+    attributable source.
+6.  Document limitations and how the change was verified.
+
+For a prototype intended to support safety-related decisions, an honest
+limitation is better than an unverified promise.
+
+## Acknowledgements and attribution
+
+-   **OpenStreetMap contributors** --- map data; attribution is required
+    when displaying the map.
+-   **Leaflet** --- open-source interactive mapping library.
+-   **Nominatim** --- public geocoding/search service, where used.
+-   **OSRM** --- routing engine; the public demo service is used where
+    available and has no service-level guarantee.
+
+Review each service's current usage policy and terms before deploying
+beyond a demonstration.
+
+## Project status
+
+FloodSense is a **hackathon / research prototype** intended to
+demonstrate a possible decision-support workflow. It is not an official
+flood-warning system, emergency dispatch platform, or validated
+public-safety product.
+
+**The goal is not to make uncertainty disappear. The goal is to make
+uncertainty visible, organize available evidence, and help people ask
+better questions before making a decision.**

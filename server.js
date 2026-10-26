@@ -1,6 +1,6 @@
 // FloodSense prototype backend. Zero dependencies (Node >= 18). Data persisted to data/db.json.
 const http = require('http'), fs = require('fs'), path = require('path'), crypto = require('crypto');
-const PORT = process.env.PORT || 3000, DB = path.join(__dirname, 'data', 'db.json'), UP = path.join(__dirname, 'data', 'uploads');
+const PORT = process.env.PORT || 3000, HOST = process.env.HOST || '0.0.0.0', DB = path.join(__dirname, 'data', 'db.json'), UP = path.join(__dirname, 'data', 'uploads');
 const now = () => new Date().toISOString(), ago = m => new Date(Date.now() - m * 60000).toISOString();
 const uid = p => p + '-' + crypto.randomBytes(3).toString('hex').toUpperCase();
 
@@ -249,4 +249,4 @@ http.createServer(async (req, res) => {
   const f = path.join(__dirname, 'public', u.pathname === '/' ? 'index.html' : path.normalize(u.pathname).replace(/^(\.\.[/\\])+/, ''));
   if (!f.startsWith(path.join(__dirname, 'public'))) { res.writeHead(403); return res.end(); }
   fs.readFile(f, (e, d) => { if (e) { res.writeHead(404); return res.end('Not found'); } res.writeHead(200, { 'Content-Type': mime[path.extname(f)] || 'application/octet-stream' }); res.end(d); });
-}).listen(PORT, () => console.log('FloodSense prototype on http://localhost:' + PORT));
+}).listen(PORT, HOST, () => console.log(`FloodSense prototype listening on http://${HOST}:${PORT} (LAN access enabled)`));
