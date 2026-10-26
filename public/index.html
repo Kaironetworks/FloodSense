@@ -5,10 +5,10 @@
 <style>
 :root{--bg:#f4f6f8;--surface:#fff;--surface-muted:#f8fafc;--line:#d8e0e8;--tx:#172536;--mut:#5d6b7b;--info:#1769aa;--info-soft:#e8f2fa;--warn:#9a6400;--warn-soft:#fff5d8;--bad:#b42332;--bad-soft:#fff0f1;--ok:#18794e;--ok-soft:#e9f7ef;--ink:#fff}
 *{box-sizing:border-box}html,body{height:100%;margin:0}
-body{font-family:system-ui,-apple-system,"Segoe UI",sans-serif;background:var(--bg);color:var(--tx);font-size:15px;display:flex;flex-direction:column;overflow:hidden}
+body{font-family:Arial,Calibri,"Segoe UI",sans-serif;background:var(--bg);color:var(--tx);font-size:15px;display:flex;flex-direction:column;overflow:hidden}
 :focus-visible{outline:3px solid #4b9bd1;outline-offset:2px}
 header{display:flex;align-items:center;gap:14px;min-height:58px;padding:8px 18px;background:var(--surface);border-bottom:1px solid var(--line);flex-wrap:wrap}
-.logo{font-weight:750;font-size:20px;letter-spacing:-.02em;color:var(--tx)}.logo b{color:var(--info)}
+.logo,h1,h2,h3{font-family:"TypeOne",Georgia,"Times New Roman",serif}.logo{font-weight:750;font-size:20px;letter-spacing:-.02em;color:var(--tx)}.logo b{color:var(--info)}
 .sp{flex:1}.clock{color:var(--mut);font-size:13px}
 button,select,input,textarea{font:inherit}
 .btn{background:var(--surface);color:var(--tx);border:1px solid #b9c6d3;border-radius:6px;padding:7px 12px;cursor:pointer;min-height:38px;font-weight:600}
@@ -42,7 +42,7 @@ input:focus,select:focus,textarea:focus{border-color:var(--info);outline:2px sol
 .stale{background:var(--warn-soft);color:#6a4700;border:1px solid #e3c36c;padding:8px 10px;border-radius:6px;font-size:13px;margin:7px 0}
 #toast{position:fixed;left:50%;transform:translateX(-50%);bottom:22px;z-index:2000;background:var(--tx);color:#fff;border:1px solid #405367;border-radius:6px;padding:10px 14px;max-width:92vw;display:flex;gap:10px;align-items:center}
 @media(max-width:860px){body{overflow:auto}main{grid-template-columns:1fr;grid-template-rows:minmax(280px,42vh) minmax(0,1fr);min-height:calc(100vh - 100px)}aside{border-left:0;border-top:1px solid var(--line);min-height:420px}nav{grid-template-columns:repeat(5,1fr);order:2;border-top:1px solid var(--line);border-bottom:0}aside{flex-direction:column}#panel{order:1}.clock{display:none}}
-@media(max-width:480px){header{padding:8px 12px;gap:9px}.logo{font-size:18px}#city{font-size:13px}#citySelect{max-width:145px;font-size:12px;padding:6px}.net{font-size:11px}nav button{font-size:11px;padding:9px 2px}.btn{min-height:36px;padding:7px 10px}}
+@media(max-width:480px){header{padding:8px 12px;gap:9px;flex-wrap:nowrap}.logo{font-size:18px}#city{display:none}#citySelect{flex:1;min-width:0;max-width:none;font-size:12px;padding:6px}.sp{display:none}.net{font-size:11px}nav button{font-size:11px;padding:9px 2px}.btn{min-height:36px;padding:7px 10px}}
 @media(prefers-reduced-motion:reduce){*{transition:none!important}}
 </style></head><body>
 <header><div class="logo">Flood<b>Sense</b></div><span class="mut" id="city">Guayaquil</span><label for="citySelect" class="sr-only">Demonstration city</label><select id="citySelect" aria-label="Demonstration city"><option value="gye">Guayaquil, Ecuador</option><option value="maa">Chennai, Tamil Nadu, India</option></select><span class="sp"></span>
