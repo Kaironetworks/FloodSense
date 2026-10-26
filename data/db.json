@@ -1,0 +1,277 @@
+{
+ "v": 2,
+ "mode": "demo",
+ "news": {
+  "videoId": ""
+ },
+ "shops": [
+  {
+   "id": "S1",
+   "name": "Farmacia (sample) Alborada",
+   "lat": -2.133,
+   "lng": -79.901,
+   "status": "open",
+   "updated": "2026-10-26T06:52:43.157Z",
+   "by": "demo"
+  },
+  {
+   "id": "S2",
+   "name": "Supermercado (sample) Centro",
+   "lat": -2.196,
+   "lng": -79.886,
+   "status": "closed",
+   "updated": "2026-10-26T06:22:43.159Z",
+   "by": "demo"
+  },
+  {
+   "id": "S3",
+   "name": "Tienda (sample) Guasmo",
+   "lat": -2.26,
+   "lng": -79.892,
+   "status": "closed",
+   "updated": "2026-10-26T06:07:43.159Z",
+   "by": "demo"
+  },
+  {
+   "id": "S4",
+   "name": "Panadería (sample) Urdesa",
+   "lat": -2.174,
+   "lng": -79.91,
+   "status": "open",
+   "updated": "2026-10-26T07:07:43.159Z",
+   "by": "demo"
+  }
+ ],
+ "chat": [
+  {
+   "id": "M1",
+   "name": "Ana (sample)",
+   "text": "Farmacia in Alborada is open, short line.",
+   "at": "2026-10-26T06:52:43.159Z",
+   "role": "guest"
+  },
+  {
+   "id": "M2",
+   "name": "Luis (sample)",
+   "text": "Av. in Guasmo is under water, shops there are closed.",
+   "at": "2026-10-26T06:25:43.159Z",
+   "role": "guest"
+  },
+  {
+   "id": "M3",
+   "name": "Moderator (sample)",
+   "text": "Reminder: shop status is community-reported, not confirmed by the shop.",
+   "at": "2026-10-26T06:32:43.159Z",
+   "role": "moderator"
+  }
+ ],
+ "alerts": [
+  {
+   "id": "A1",
+   "title": "DEMO: Heavy-rain warning, Guayaquil",
+   "severity": "high",
+   "source": "DEMO (INAMHI adapter not connected)",
+   "published": "2026-10-26T06:37:43.159Z",
+   "validUntil": "2026-10-26T13:17:43.159Z",
+   "rainMmH": 38,
+   "official": true
+  }
+ ],
+ "zones": [
+  {
+   "id": "Z1",
+   "name": "Guasmo (demo zone)",
+   "level": "high",
+   "poly": [
+    [
+     -2.235,
+     -79.915
+    ],
+    [
+     -2.235,
+     -79.875
+    ],
+    [
+     -2.275,
+     -79.875
+    ],
+    [
+     -2.275,
+     -79.915
+    ]
+   ]
+  },
+  {
+   "id": "Z2",
+   "name": "Suburbio Oeste (demo zone)",
+   "level": "high",
+   "poly": [
+    [
+     -2.195,
+     -79.955
+    ],
+    [
+     -2.195,
+     -79.915
+    ],
+    [
+     -2.235,
+     -79.915
+    ],
+    [
+     -2.235,
+     -79.955
+    ]
+   ]
+  },
+  {
+   "id": "Z3",
+   "name": "Pascuales (demo zone)",
+   "level": "moderate",
+   "poly": [
+    [
+     -2.06,
+     -79.97
+    ],
+    [
+     -2.06,
+     -79.92
+    ],
+    [
+     -2.1,
+     -79.92
+    ],
+    [
+     -2.1,
+     -79.97
+    ]
+   ]
+  }
+ ],
+ "facilities": [
+  {
+   "id": "F1",
+   "name": "Hospital (sample) Guasmo Sur",
+   "type": "hospital",
+   "lat": -2.2551,
+   "lng": -79.9,
+   "phone": "",
+   "verified": false,
+   "source": "Demo sample"
+  },
+  {
+   "id": "F2",
+   "name": "Hospital (sample) Centro",
+   "type": "hospital",
+   "lat": -2.2036,
+   "lng": -79.8855,
+   "phone": "",
+   "verified": false,
+   "source": "Demo sample"
+  },
+  {
+   "id": "F3",
+   "name": "Shelter (sample) Coliseo Norte",
+   "type": "shelter",
+   "lat": -2.14,
+   "lng": -79.9,
+   "phone": "",
+   "verified": false,
+   "source": "Demo sample"
+  },
+  {
+   "id": "F4",
+   "name": "Pharmacy (sample) Alborada",
+   "type": "pharmacy",
+   "lat": -2.133,
+   "lng": -79.901,
+   "phone": "",
+   "verified": false,
+   "source": "Demo sample"
+  },
+  {
+   "id": "F5",
+   "name": "Fire station (sample) Sur",
+   "type": "fire",
+   "lat": -2.22,
+   "lng": -79.895,
+   "phone": "",
+   "verified": false,
+   "source": "Demo sample"
+  }
+ ],
+ "reports": [
+  {
+   "id": "R-SEED1",
+   "category": "flooded_road",
+   "title": "DEMO: Water over road near Guasmo",
+   "description": "Fictional seeded report.",
+   "lat": -2.25,
+   "lng": -79.895,
+   "status": "verified",
+   "severity": "high",
+   "corroborations": 2,
+   "created": "2026-10-26T05:47:43.159Z",
+   "updated": "2026-10-26T06:17:43.159Z",
+   "by": "demo",
+   "gps": true,
+   "photos": [
+    "/samples/flood1.svg"
+   ],
+   "history": [
+    {
+     "at": "2026-10-26T06:17:43.159Z",
+     "by": "moderator",
+     "to": "verified"
+    }
+   ]
+  },
+  {
+   "id": "R-SEED3",
+   "category": "closure",
+   "title": "DEMO: Road closed, underpass flooded (Guasmo)",
+   "description": "Fictional seeded report with sample photo.",
+   "lat": -2.24,
+   "lng": -79.9,
+   "status": "verified",
+   "severity": "high",
+   "corroborations": 1,
+   "created": "2026-10-26T05:57:43.159Z",
+   "updated": "2026-10-26T06:27:43.159Z",
+   "by": "demo",
+   "gps": true,
+   "photos": [
+    "/samples/flood2.svg"
+   ],
+   "history": [
+    {
+     "at": "2026-10-26T06:27:43.159Z",
+     "by": "moderator",
+     "to": "verified"
+    }
+   ]
+  },
+  {
+   "id": "R-SEED2",
+   "category": "debris",
+   "title": "DEMO: Fallen tree, Av. Domingo Comín",
+   "description": "Fictional seeded report.",
+   "lat": -2.21,
+   "lng": -79.93,
+   "status": "awaiting",
+   "severity": "moderate",
+   "corroborations": 0,
+   "created": "2026-10-26T06:57:43.159Z",
+   "updated": "2026-10-26T06:57:43.159Z",
+   "by": "demo",
+   "gps": false,
+   "photos": [
+    "/samples/tree.svg"
+   ],
+   "history": []
+  }
+ ],
+ "sos": [],
+ "audit": [],
+ "rl": {}
+}

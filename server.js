@@ -1,0 +1,252 @@
+// FloodSense prototype backend. Zero dependencies (Node >= 18). Data persisted to data/db.json.
+const http = require('http'), fs = require('fs'), path = require('path'), crypto = require('crypto');
+const PORT = process.env.PORT || 3000, DB = path.join(__dirname, 'data', 'db.json'), UP = path.join(__dirname, 'data', 'uploads');
+const now = () => new Date().toISOString(), ago = m => new Date(Date.now() - m * 60000).toISOString();
+const uid = p => p + '-' + crypto.randomBytes(3).toString('hex').toUpperCase();
+
+// These five local readings are deterministic demo inputs, not verified telemetry.
+const SENSOR_NODES = [
+  { id: 'GYE-URDESA', name: 'Urdesa Corridor', lat: -2.1709, lng: -79.9078, elevation: 2, drainage: 0.4, normalDepth: 0.35, heavyDepth: 0.8 },
+  { id: 'GYE-HOSP-IESS', name: 'Hospital IESS', lat: -2.2342, lng: -79.9011, elevation: 4, drainage: 0.8, normalDepth: 0.12, heavyDepth: 0.35 },
+  { id: 'GYE-DOWNTOWN-9OCT', name: 'Av. 9 de Octubre', lat: -2.1944, lng: -79.8883, elevation: 1.5, drainage: 0.3, normalDepth: 0.62, heavyDepth: 1.1 },
+  { id: 'GYE-SINAI-VULN', name: 'Monte Sinai', lat: -2.2534, lng: -79.9321, elevation: 1, drainage: 0.1, normalDepth: 1.25, heavyDepth: 1.65 },
+  { id: 'GYE-BARCELONA', name: 'Av. Barcelona Axis', lat: -2.2011, lng: -79.9234, elevation: 3, drainage: 0.5, normalDepth: 0.28, heavyDepth: 0.65 }
+];
+
+function seed() { // ALL FICTIONAL / DEMO. Coordinates approximate, for illustration only.
+  return {
+    v: 2, mode: 'demo', news: { videoId: '' },
+    shops: [
+      { id: 'S1', name: 'Farmacia (sample) Alborada', lat: -2.1330, lng: -79.9010, status: 'open', updated: ago(25), by: 'demo' },
+      { id: 'S2', name: 'Supermercado (sample) Centro', lat: -2.1960, lng: -79.8860, status: 'closed', updated: ago(55), by: 'demo' },
+      { id: 'S3', name: 'Tienda (sample) Guasmo', lat: -2.2600, lng: -79.8920, status: 'closed', updated: ago(70), by: 'demo' },
+      { id: 'S4', name: 'Panadería (sample) Urdesa', lat: -2.1740, lng: -79.9100, status: 'open', updated: ago(10), by: 'demo' }],
+    chat: [
+      { id: 'M1', name: 'Ana (sample)', text: 'Farmacia in Alborada is open, short line.', at: ago(25), role: 'guest' },
+      { id: 'M2', name: 'Luis (sample)', text: 'Av. in Guasmo is under water, shops there are closed.', at: ago(52), role: 'guest' },
+      { id: 'M3', name: 'Moderator (sample)', text: 'Reminder: shop status is community-reported, not confirmed by the shop.', at: ago(45), role: 'moderator' }],
+    alerts: [{ id: 'A1', title: 'DEMO: Heavy-rain warning, Guayaquil', severity: 'high', source: 'DEMO (INAMHI adapter not connected)', published: ago(40), validUntil: new Date(Date.now() + 6 * 3600e3).toISOString(), rainMmH: 38, official: true }],
+    zones: [ // coarse sample polygons [lat,lng]; real data = SGR "Susceptibilidad de Inundaciones" MapServer
+      { id: 'Z1', name: 'Guasmo (demo zone)', level: 'high', poly: [[-2.235, -79.915], [-2.235, -79.875], [-2.275, -79.875], [-2.275, -79.915]] },
+      { id: 'Z2', name: 'Suburbio Oeste (demo zone)', level: 'high', poly: [[-2.195, -79.955], [-2.195, -79.915], [-2.235, -79.915], [-2.235, -79.955]] },
+      { id: 'Z3', name: 'Pascuales (demo zone)', level: 'moderate', poly: [[-2.06, -79.97], [-2.06, -79.92], [-2.10, -79.92], [-2.10, -79.97]] }],
+    facilities: [
+      { id: 'F1', name: 'Hospital (sample) Guasmo Sur', type: 'hospital', lat: -2.2551, lng: -79.9000, phone: '', verified: false, source: 'Demo sample' },
+      { id: 'F2', name: 'Hospital (sample) Centro', type: 'hospital', lat: -2.2036, lng: -79.8855, phone: '', verified: false, source: 'Demo sample' },
+      { id: 'F3', name: 'Shelter (sample) Coliseo Norte', type: 'shelter', lat: -2.1400, lng: -79.9000, phone: '', verified: false, source: 'Demo sample' },
+      { id: 'F4', name: 'Pharmacy (sample) Alborada', type: 'pharmacy', lat: -2.1330, lng: -79.9010, phone: '', verified: false, source: 'Demo sample' },
+      { id: 'F5', name: 'Fire station (sample) Sur', type: 'fire', lat: -2.2200, lng: -79.8950, phone: '', verified: false, source: 'Demo sample' }],
+    reports: [
+      { id: 'R-SEED1', category: 'flooded_road', title: 'DEMO: Water over road near Guasmo', description: 'Fictional seeded report.', lat: -2.2500, lng: -79.8950, status: 'verified', severity: 'high', corroborations: 2, created: ago(90), updated: ago(60), by: 'demo', gps: true, photos: ['/samples/flood1.svg'], history: [{ at: ago(60), by: 'moderator', to: 'verified' }] },
+      { id: 'R-SEED3', category: 'closure', title: 'DEMO: Road closed, underpass flooded (Guasmo)', description: 'Fictional seeded report with sample photo.', lat: -2.2400, lng: -79.9000, status: 'verified', severity: 'high', corroborations: 1, created: ago(80), updated: ago(50), by: 'demo', gps: true, photos: ['/samples/flood2.svg'], history: [{ at: ago(50), by: 'moderator', to: 'verified' }] },
+      { id: 'R-SEED2', category: 'debris', title: 'DEMO: Fallen tree, Av. Domingo Comín', description: 'Fictional seeded report.', lat: -2.2100, lng: -79.9300, status: 'awaiting', severity: 'moderate', corroborations: 0, created: ago(20), updated: ago(20), by: 'demo', gps: false, photos: ['/samples/tree.svg'], history: [] }],
+    sos: [], audit: [], rl: {}
+  };
+}
+let db; try { db = JSON.parse(fs.readFileSync(DB)); if (db.v !== 2) throw 0; } catch { db = seed(); save(); }
+function save() { fs.mkdirSync(path.dirname(DB), { recursive: true }); fs.writeFileSync(DB, JSON.stringify(db, null, 1)); }
+const sessions = {}; // token -> {role,name}
+const audit = (who, action, target) => { db.audit.unshift({ at: now(), who, action, target }); db.audit = db.audit.slice(0, 200); };
+
+// ---- explainable rules-based risk (v0.1). Output is an ESTIMATED SCORE, not a probability. ----
+const inPoly = (lat, lng, p) => { let c = false; for (let i = 0, j = p.length - 1; i < p.length; j = i++) { const [yi, xi] = p[i], [yj, xj] = p[j]; if ((xi > lng) !== (xj > lng) && lat < (yj - yi) * (lng - xi) / (xj - xi) + yi) c = !c; } return c; };
+const km = (a, b, c, d) => { const r = x => x * Math.PI / 180, h = Math.sin(r(c - a) / 2) ** 2 + Math.cos(r(a)) * Math.cos(r(c)) * Math.sin(r(d - b) / 2) ** 2; return 12742 * Math.asin(Math.sqrt(h)); };
+const nearestSensor = (lat, lng) => SENSOR_NODES.map(n => ({ ...n, distanceKm: km(lat, lng, n.lat, n.lng) })).sort((a, b) => a.distanceKm - b.distanceKm)[0];
+const SENSOR_GRAPH = {
+  'GYE-DOWNTOWN-9OCT': [
+    { to: 'GYE-BARCELONA', name: '9 de Octubre Floodway', distanceKm: 2.1, elevationM: 1.2, sensor: 'GYE-DOWNTOWN-9OCT' },
+    { to: 'GYE-URDESA', name: 'Downtown-Urdesa Connector', distanceKm: 2.8, elevationM: 2.1 }
+  ],
+  'GYE-URDESA': [
+    { to: 'GYE-DOWNTOWN-9OCT', name: 'Downtown-Urdesa Connector', distanceKm: 2.8, elevationM: 2.1 },
+    { to: 'GYE-BARCELONA', name: 'Urdesa-Barcelona Link', distanceKm: 3, elevationM: 2.6 },
+    { to: 'GYE-HOSP-IESS', name: 'Urdesa-IESS Connector', distanceKm: 4.3, elevationM: 3 }
+  ],
+  'GYE-BARCELONA': [
+    { to: 'GYE-DOWNTOWN-9OCT', name: '9 de Octubre Floodway', distanceKm: 2.1, elevationM: 1.2, sensor: 'GYE-DOWNTOWN-9OCT' },
+    { to: 'GYE-URDESA', name: 'Urdesa-Barcelona Link', distanceKm: 3, elevationM: 2.6 },
+    { to: 'GYE-HOSP-IESS', name: 'Barcelona-IESS Connector', distanceKm: 3.7, elevationM: 3.4 }
+  ],
+  'GYE-HOSP-IESS': [
+    { to: 'GYE-URDESA', name: 'Urdesa-IESS Connector', distanceKm: 4.3, elevationM: 3 },
+    { to: 'GYE-BARCELONA', name: 'Barcelona-IESS Connector', distanceKm: 3.7, elevationM: 3.4 },
+    { to: 'GYE-SINAI-VULN', name: 'IESS-Monte Sinai Route', distanceKm: 5.2, elevationM: 2.1, sensor: 'GYE-SINAI-VULN' }
+  ],
+  'GYE-SINAI-VULN': [
+    { to: 'GYE-HOSP-IESS', name: 'IESS-Monte Sinai Route', distanceKm: 5.2, elevationM: 2.1, sensor: 'GYE-SINAI-VULN' }
+  ]
+};
+function sensorRoute(from, to, heavy) {
+  const nodes = Object.keys(SENSOR_GRAPH);
+  if (!SENSOR_GRAPH[from] || !SENSOR_GRAPH[to]) return { found: false, error: 'unknown sensor node' };
+  const distances = new Map(nodes.map(n => [n, Infinity])), previous = new Map(), pending = new Set(nodes);
+  const avoidedSegments = [];
+  const sensorById = id => SENSOR_NODES.find(n => n.id === id);
+  const edgeCost = (edge, source) => {
+    const sensor = edge.sensor && sensorById(edge.sensor);
+    const impassable = heavy && sensor && sensor.heavyDepth >= 1;
+    if (impassable) {
+      avoidedSegments.push({ from: source, to: edge.to, road: edge.name, reason: 'SIMULATED_SENSOR_IMPASSABLE', sensor: sensor.id });
+      return Infinity;
+    }
+    const depth = heavy && sensor ? sensor.heavyDepth : sensor ? sensor.normalDepth : 0;
+    const risk = Math.min(1, depth / 1.5) * 3 + Math.max(0, 3 - edge.elevationM) * 0.2;
+    return edge.distanceKm * (1 + risk);
+  };
+  distances.set(from, 0);
+  while (pending.size) {
+    let current = null;
+    pending.forEach(n => { if (current === null || distances.get(n) < distances.get(current)) current = n; });
+    if (current === null || distances.get(current) === Infinity) break;
+    pending.delete(current);
+    if (current === to) break;
+    SENSOR_GRAPH[current].forEach(edge => {
+      if (!pending.has(edge.to)) return;
+      const cost = edgeCost(edge, current);
+      if (cost === Infinity) return;
+      const next = distances.get(current) + cost;
+      if (next < distances.get(edge.to)) {
+        distances.set(edge.to, next);
+        previous.set(edge.to, { node: current, edge, cost });
+      }
+    });
+  }
+  if (distances.get(to) === Infinity) return { found: false, avoidedSegments, dataMode: heavy ? 'SIMULATED_HEAVY_RAIN' : 'SIMULATED_BASELINE' };
+  const path = [];
+  for (let cursor = to; cursor !== from;) {
+    const step = previous.get(cursor);
+    path.unshift({ from: step.node, to: cursor, road: step.edge.name, distanceKm: step.edge.distanceKm, elevationM: step.edge.elevationM, cost: +step.cost.toFixed(2) });
+    cursor = step.node;
+  }
+  return { found: true, from, to, path, totalDistanceKm: +path.reduce((sum, e) => sum + e.distanceKm, 0).toFixed(2), totalCost: +distances.get(to).toFixed(2), avoidedSegments, dataMode: heavy ? 'SIMULATED_HEAVY_RAIN' : 'SIMULATED_BASELINE', graphNote: 'Illustrative elevation-aware graph, not a verified Guayaquil road network.' };
+}
+function assess(lat, lng) {
+  const reasons = [], missing = []; let score = 0, signals = 0;
+  const al = db.alerts.filter(a => new Date(a.validUntil) > new Date());
+  if (al.length) { const w = { low: 10, moderate: 20, high: 35, critical: 45 }[al[0].severity] || 0; score += w; signals++; reasons.push({ f: 'Official warning (' + al[0].severity + ')', pts: w, src: al[0].source }); } else missing.push('No active official warning in database');
+  const z = db.zones.find(z => inPoly(lat, lng, z.poly));
+  if (z) { const w = z.level === 'high' ? 30 : 15; score += w; signals++; reasons.push({ f: 'Inside susceptibility zone: ' + z.name, pts: w, src: 'Historical susceptibility, not current flooding' }); } else missing.push('Not inside any loaded susceptibility polygon (coverage is coarse and partial)');
+  const near = db.reports.filter(r => r.status === 'verified' && km(lat, lng, r.lat, r.lng) < 1.5 && Date.now() - new Date(r.updated) < 24 * 3600e3);
+  if (near.length) { const w = Math.min(25, 12 * near.length); score += w; signals++; reasons.push({ f: near.length + ' verified report(s) within 1.5 km, last 24 h', pts: w, src: 'Community, moderator-verified' }); } else missing.push('No verified reports nearby (absence is not proof of safety)');
+  const sensor = nearestSensor(lat, lng);
+  if (sensor.distanceKm <= 2.5) {
+    const depth = sensor.normalDepth;
+    const w = Math.min(20, Math.round(depth / 1.5 * 20));
+    score += w;
+    signals++;
+    reasons.push({ f: `Simulated sensor ${sensor.id}: ${depth.toFixed(2)} m water depth`, pts: w, src: 'Deterministic demo reading; unverified local telemetry' });
+  } else {
+    missing.push('No simulated sensor node within 2.5 km');
+  }
+  missing.push('Google Flood Hub: not connected', 'Satellite SAR: not integrated');
+  const level = signals === 0 ? 'insufficient' : score >= 70 ? 'critical' : score >= 45 ? 'high' : score >= 20 ? 'moderate' : 'low';
+  return { version: 'rules-0.2', label: 'Estimated risk score (not a probability)', score: Math.min(100, score), level, reasons, missing, computedAt: now(), dataMode: 'SIMULATED_LOCAL_INPUTS', demo: true };
+}
+
+const send = (res, code, obj) => { res.writeHead(code, { 'Content-Type': 'application/json', 'X-Content-Type-Options': 'nosniff' }); res.end(JSON.stringify(obj)); };
+const body = req => new Promise(r => { let b = ''; req.on('data', c => { b += c; if (b.length > 2.5e6) req.destroy(); }); req.on('end', () => { try { r(JSON.parse(b || '{}')); } catch { r({}); } }); });
+const limit = (ip, key, n, win) => { const k = ip + key, t = Date.now(); db.rl[k] = (db.rl[k] || []).filter(x => t - x < win); if (db.rl[k].length >= n) return false; db.rl[k].push(t); return true; };
+const ytId = s => { const m = /(?:v=|youtu\.be\/|embed\/|live\/)([\w-]{11})/.exec(s || '') || /^([\w-]{11})$/.exec(String(s || '').trim()); return m ? m[1] : ''; };
+function savePhoto(id, d) { const m = /^data:image\/jpeg;base64,([A-Za-z0-9+/=]+)$/.exec(d || ''); if (!m) return null; const buf = Buffer.from(m[1], 'base64'); if (buf.length > 1.5e6 || buf[0] !== 0xFF || buf[1] !== 0xD8 || buf[2] !== 0xFF) return null; fs.mkdirSync(UP, { recursive: true }); fs.writeFileSync(path.join(UP, id + '.jpg'), buf); return '/uploads/' + id + '.jpg'; }
+const NEWS_LINKS = [['INAMHI alerts', 'https://servicios.inamhi.gob.ec/alertas/'], ['SGR (Gestión de Riesgos)', 'https://sgrportal.gestionderiesgos.gob.ec'], ['ECU 911', 'https://www.ecu911.gob.ec'], ['Alcaldía de Guayaquil', 'https://www.guayaquil.gob.ec']];
+const num = (v, lo, hi) => typeof v === 'number' && v >= lo && v <= hi;
+const clean = (s, n) => String(s || '').replace(/[<>]/g, '').slice(0, n);
+let osrmCache = { at: 0, ok: null };
+async function sources() {
+  if (Date.now() - osrmCache.at > 60000) { try { const c = new AbortController(); setTimeout(() => c.abort(), 4000); const r = await fetch('https://router.project-osrm.org/route/v1/driving/-79.89,-2.19;-79.90,-2.20', { signal: c.signal }); osrmCache = { at: Date.now(), ok: r.ok, ts: now() }; } catch (e) { osrmCache = { at: Date.now(), ok: false }; } }
+  const nc = (name, type, url, why) => ({ name, type, url, status: 'not_configured', lastSuccess: null, note: why });
+  return [
+    { name: 'OSRM public routing (demo server)', type: 'routing', url: 'https://router.project-osrm.org', status: osrmCache.ok ? 'connected' : 'unavailable', lastSuccess: osrmCache.ok ? osrmCache.ts : null, note: 'Public demo server, no SLA. Not for production.' },
+    { name: 'Seeded demo database', type: 'demo', url: '-', status: 'demo', lastSuccess: null, note: 'Fictional data, clearly labeled.' },
+    nc('INAMHI alerts', 'weather', 'https://servicios.inamhi.gob.ec/alertas/', 'Adapter stub: no documented machine-readable feed verified yet. Use manual import.'),
+    nc('SGR flood susceptibility (ArcGIS MapServer)', 'gis', 'https://sgrportal.gestionderiesgos.gob.ec/server/rest/services/Susceptibilidad_de_Inundaciones/MapServer', 'Next step: query layer with ?f=json, store polygons in PostGIS.'),
+    nc('Google Flood Forecasting API', 'river', 'https://developers.google.com/flood-forecasting', 'Requires approved access + API key (GOOGLE_FLOOD_API_KEY).'),
+    nc('Guayaquil ATM/Segura risk data', 'gis', '-', 'Not integrated.')];
+}
+
+const routes = [];
+const R = (m, p, fn) => routes.push([m, new RegExp('^' + p.replace(/:\w+/g, '([^/]+)') + '$'), fn]);
+const need = (ctx, ...roles) => { if (!ctx.user || (roles.length && !roles.includes(ctx.user.role))) { ctx.res && send(ctx.res, ctx.user ? 403 : 401, { error: ctx.user ? 'forbidden' : 'sign in required' }); return false; } return true; };
+const pubReport = r => ({ photos: r.photos || [], gps: !!r.gps, id: r.id, category: r.category, title: r.title, description: r.description, lat: r.lat, lng: r.lng, status: r.status, severity: r.severity, corroborations: r.corroborations, created: r.created, updated: r.updated });
+
+R('GET', '/api/health', async c => send(c.res, 200, { ok: true, mode: db.mode, time: now() }));
+R('POST', '/api/login', async c => { const b = await body(c.req); const role = ['resident', 'moderator', 'responder', 'admin'].includes(b.role) ? b.role : 'resident'; const t = crypto.randomBytes(16).toString('hex'); sessions[t] = { role, name: clean(b.name || role, 30) + ' (demo)', id: t.slice(0, 6) }; audit(sessions[t].name, 'login', role); save(); send(c.res, 200, { token: t, user: sessions[t] }); });
+R('GET', '/api/sources/status', async c => send(c.res, 200, { fetchedAt: now(), sources: await sources() }));
+R('GET', '/api/alerts', async c => send(c.res, 200, { demo: true, alerts: db.alerts.map(a => ({ ...a, fresh: new Date(a.validUntil) > new Date() })) }));
+R('GET', '/api/flood/zones', async c => send(c.res, 200, { demo: true, note: 'Coarse sample polygons, not street-level flood boundaries.', zones: db.zones }));
+R('GET', '/api/flood/sensors', async c => {
+  const heavy = c.q.get('scenario') === 'heavy';
+  send(c.res, 200, {
+    dataMode: heavy ? 'SIMULATED_HEAVY_RAIN' : 'SIMULATED_BASELINE',
+    note: 'All sensor readings, elevation, drainage, and tide values are simulated and unverified.',
+    tideHeightM: heavy ? 2.9 : 1.4,
+    rainfall: { value: heavy ? 42 : 0, unit: 'mm', measurement: 'scenario precipitation, not a live gauge' },
+    sensors: SENSOR_NODES.map(n => ({
+      id: n.id, name: n.name, lat: n.lat, lng: n.lng,
+      elevationM: n.elevation, drainage: n.drainage,
+      waterDepthM: heavy ? n.heavyDepth : n.normalDepth,
+      roadStatus: heavy && n.id === 'GYE-SINAI-VULN' ? 'IMPASSABLE' : heavy && n.heavyDepth >= 1 ? 'CAUTION' : 'OPEN',
+      dataStatus: 'SIMULATED_UNVERIFIED'
+    }))
+  });
+});
+R('GET', '/api/flood/route', async c => {
+  const from = c.q.get('from'), to = c.q.get('to'), scenario = c.q.get('scenario');
+  if (!from || !to || (scenario && scenario !== 'heavy')) return send(c.res, 400, { error: 'from, to and optional scenario=heavy are required' });
+  const result = sensorRoute(from, to, scenario === 'heavy');
+  if (result.error) return send(c.res, 400, { error: result.error });
+  send(c.res, result.found ? 200 : 409, result);
+});
+R('GET', '/api/flood/assessments', async c => { const lat = +c.q.get('lat'), lng = +c.q.get('lng'); if (!num(lat, -90, 90) || !num(lng, -180, 180)) return send(c.res, 400, { error: 'invalid coordinates' }); send(c.res, 200, assess(lat, lng)); });
+R('GET', '/api/incidents', async c => { const st = c.q.get('status'), cat = c.q.get('category'); let l = db.reports.filter(r => r.status !== 'rejected'); if (st) l = l.filter(r => r.status === st); if (cat) l = l.filter(r => r.category === cat); send(c.res, 200, { demo: true, incidents: l.sort((a, b) => b.created.localeCompare(a.created)).slice(0, 100).map(pubReport) }); });
+R('POST', '/api/reports', async c => {
+  if (!limit(c.ip, 'rep', 5, 600000)) return send(c.res, 429, { error: 'Too many reports. Try again in a few minutes.' });
+  const b = await body(c.req), cats = ['flooded_road', 'water', 'closure', 'debris', 'drainage', 'dangerous_level', 'blocked_evac', 'needs_help', 'other'];
+  const id0 = uid('R'); let photo = null; if (b.photo) { photo = savePhoto(id0, b.photo); if (!photo) return send(c.res, 400, { error: 'photo must be a JPEG under 1.5 MB', fields: ['photo'] }); }
+  const errs = []; if (!cats.includes(b.category)) errs.push('category'); if (!num(b.lat, -90, 90) || !num(b.lng, -180, 180)) errs.push('location'); if (clean(b.title, 80).length < 4) errs.push('title (min 4 chars)');
+  if (errs.length) return send(c.res, 400, { error: 'validation failed', fields: errs });
+  const dup = db.reports.find(r => r.category === b.category && km(r.lat, r.lng, b.lat, b.lng) < 0.15 && Date.now() - new Date(r.created) < 3 * 3600e3 && r.status !== 'rejected');
+  if (dup) { if (photo) dup.photos = (dup.photos || []).concat(photo); dup.corroborations++; if (dup.status === 'awaiting' && dup.corroborations >= 1) dup.status = 'corroborated'; dup.updated = now(); dup.history.push({ at: now(), by: 'system', to: dup.status + ' (duplicate nearby counted as corroboration)' }); save(); return send(c.res, 200, { corroboratedExisting: true, report: pubReport(dup), message: 'A similar report exists nearby. Your report counted as corroboration.' }); }
+  const r = { id: id0, photos: photo ? [photo] : [], gps: b.gps === true, category: b.category, title: clean(b.title, 80), description: clean(b.description, 500), lat: b.lat, lng: b.lng, status: 'awaiting', severity: ['low', 'moderate', 'high'].includes(b.severity) ? b.severity : 'moderate', corroborations: 0, created: now(), updated: now(), by: c.user ? c.user.id : 'anon', history: [] };
+  db.reports.push(r); save(); send(c.res, 201, { report: pubReport(r) });
+});
+R('POST', '/api/reports/:id/verify', async c => { if (!need(c, 'moderator', 'admin')) return; const b = await body(c.req), r = db.reports.find(x => x.id === c.p[0]); if (!r) return send(c.res, 404, { error: 'not found' }); if (!['verified', 'rejected', 'corroborated'].includes(b.status)) return send(c.res, 400, { error: 'invalid status' }); r.status = b.status; r.updated = now(); r.history.push({ at: now(), by: c.user.name, to: b.status }); audit(c.user.name, 'report.' + b.status, r.id); save(); send(c.res, 200, { report: pubReport(r) }); });
+R('POST', '/api/reports/:id/resolve', async c => { if (!need(c, 'moderator', 'admin')) return; const r = db.reports.find(x => x.id === c.p[0]); if (!r) return send(c.res, 404, { error: 'not found' }); r.status = 'resolved'; r.updated = now(); r.history.push({ at: now(), by: c.user.name, to: 'resolved' }); audit(c.user.name, 'report.resolved', r.id); save(); send(c.res, 200, { report: pubReport(r) }); });
+R('GET', '/api/news', async c => send(c.res, 200, { videoId: db.news.videoId, links: NEWS_LINKS, note: 'No live official stream is connected automatically. An admin can publish an official YouTube video/live link.' }));
+R('PUT', '/api/admin/news', async c => { if (!need(c, 'admin')) return; const b = await body(c.req); const id = b.video ? ytId(b.video) : ''; if (b.video && !id) return send(c.res, 400, { error: 'not a YouTube link' }); db.news.videoId = id; audit(c.user.name, 'news.video', id || 'cleared'); save(); send(c.res, 200, { videoId: id }); });
+R('GET', '/api/chat', async c => send(c.res, 200, { demo: true, messages: db.chat.slice(-60) }));
+R('POST', '/api/chat', async c => { if (!limit(c.ip, 'chat', 8, 60000)) return send(c.res, 429, { error: 'Too many messages. Wait a minute.' }); const b = await body(c.req), text = clean(b.text, 300).trim(); if (text.length < 2) return send(c.res, 400, { error: 'message too short' }); const m = { id: uid('M'), name: clean(b.name || 'Guest', 24).trim() || 'Guest', text, at: now(), role: c.user ? c.user.role : 'guest' }; db.chat.push(m); db.chat = db.chat.slice(-200); save(); send(c.res, 201, { message: m }); });
+R('DELETE', '/api/chat/:id', async c => { if (!need(c, 'moderator', 'admin')) return; db.chat = db.chat.filter(m => m.id !== c.p[0]); audit(c.user.name, 'chat.delete', c.p[0]); save(); send(c.res, 200, { ok: true }); });
+R('GET', '/api/shops', async c => send(c.res, 200, { demo: true, note: 'Open/closed is community-reported and not confirmed by the shops.', shops: db.shops }));
+R('POST', '/api/shops', async c => { if (!limit(c.ip, 'shop', 5, 600000)) return send(c.res, 429, { error: 'Too many shops added.' }); const b = await body(c.req); if (clean(b.name, 60).length < 3 || !num(b.lat, -90, 90) || !num(b.lng, -180, 180) || !['open', 'closed'].includes(b.status)) return send(c.res, 400, { error: 'name, location and status required' }); const s = { id: uid('S'), name: clean(b.name, 60), lat: b.lat, lng: b.lng, status: b.status, updated: now(), by: 'community' }; db.shops.push(s); save(); send(c.res, 201, { shop: s }); });
+R('POST', '/api/shops/:id/status', async c => { if (!limit(c.ip, 'shopst', 10, 60000)) return send(c.res, 429, { error: 'Too many updates.' }); const b = await body(c.req), s = db.shops.find(x => x.id === c.p[0]); if (!s || !['open', 'closed', 'unknown'].includes(b.status)) return send(c.res, 400, { error: 'invalid' }); s.status = b.status; s.updated = now(); s.by = 'community'; db.chat.push({ id: uid('M'), name: 'Shop board', text: s.name + ': reported ' + b.status, at: now(), role: 'system' }); save(); send(c.res, 200, { shop: s }); });
+R('GET', '/api/safe-locations', async c => { const lat = +c.q.get('lat'), lng = +c.q.get('lng'), t = c.q.get('type'); let l = db.facilities.filter(f => !t || f.type === t); if (num(lat, -90, 90) && num(lng, -180, 180)) l = l.map(f => ({ ...f, distanceKm: +km(lat, lng, f.lat, f.lng).toFixed(2) })).sort((a, b) => a.distanceKm - b.distanceKm); send(c.res, 200, { demo: true, note: 'Availability/open status not provided: no trusted source connected.', facilities: l }); });
+R('POST', '/api/sos', async c => {
+  if (!limit(c.ip, 'sos', 3, 600000)) return send(c.res, 429, { error: 'SOS rate limit reached. If in danger, call 911 now.' });
+  const b = await body(c.req); if (!num(b.lat, -90, 90) || !num(b.lng, -180, 180)) return send(c.res, 400, { error: 'location required (tap the map or use GPS)' });
+  const types = ['flooding', 'trapped', 'medical', 'evacuation', 'other']; if (!types.includes(b.type)) return send(c.res, 400, { error: 'invalid type' });
+  const s = { id: uid('SOS'), secret: crypto.randomBytes(4).toString('hex'), type: b.type, description: clean(b.description, 400), lat: b.lat, lng: b.lng, status: 'received', created: now(), history: [{ at: now(), status: 'received', by: 'system' }], notes: [], assignee: null, owner: c.user ? c.user.id : 'anon' };
+  db.sos.push(s); audit('system', 'sos.created', s.id); save();
+  send(c.res, 201, { ref: s.id, accessCode: s.secret, status: s.status, message: 'Your request was submitted to the FloodSense response dashboard. Official emergency dispatch is not connected. Call 911 if you are in danger.' });
+});
+R('GET', '/api/sos/:id', async c => { const s = db.sos.find(x => x.id === c.p[0]); if (!s) return send(c.res, 404, { error: 'not found' }); const ok = (c.user && ['responder', 'admin'].includes(c.user.role)) || s.secret === c.q.get('code'); if (!ok) return send(c.res, 403, { error: 'access code required' }); send(c.res, 200, { ref: s.id, status: s.status, history: s.history.map(h => ({ at: h.at, status: h.status })), dispatchConnected: false }); });
+R('POST', '/api/sos/:id/cancel', async c => { const s = db.sos.find(x => x.id === c.p[0]); const b = await body(c.req); if (!s || s.secret !== b.code) return send(c.res, 403, { error: 'access code required' }); s.status = 'cancelled_false_alarm'; s.history.push({ at: now(), status: s.status, by: 'resident' }); save(); send(c.res, 200, { status: s.status }); });
+R('GET', '/api/responder/incidents', async c => { if (!need(c, 'responder', 'admin')) return; send(c.res, 200, { incidents: db.sos.map(({ secret, ...s }) => s).reverse() }); });
+R('PATCH', '/api/responder/incidents/:id/status', async c => { if (!need(c, 'responder', 'admin')) return; const b = await body(c.req), s = db.sos.find(x => x.id === c.p[0]); if (!s) return send(c.res, 404, { error: 'not found' }); if (!['acknowledged', 'assigned', 'en_route', 'resolved', 'unable_to_respond'].includes(b.status)) return send(c.res, 400, { error: 'invalid status' }); s.status = b.status; if (b.status === 'assigned') s.assignee = c.user.name; if (b.note) s.notes.push({ at: now(), by: c.user.name, text: clean(b.note, 300) }); s.history.push({ at: now(), status: b.status, by: c.user.name }); audit(c.user.name, 'sos.' + b.status, s.id); save(); send(c.res, 200, { status: s.status }); });
+R('GET', '/api/admin/overview', async c => { if (!need(c, 'admin', 'moderator', 'responder')) return; send(c.res, 200, { reports: db.reports.length, awaiting: db.reports.filter(r => r.status === 'awaiting').length, sos: db.sos.length, sosOpen: db.sos.filter(s => !['resolved', 'cancelled_false_alarm', 'unable_to_respond'].includes(s.status)).length }); });
+R('GET', '/api/admin/audit-logs', async c => { if (!need(c, 'admin')) return; send(c.res, 200, { logs: db.audit }); });
+R('POST', '/api/admin/reset-demo', async c => { if (!need(c, 'admin')) return; db = seed(); audit(c.user.name, 'reset-demo', '-'); save(); send(c.res, 200, { ok: true }); });
+
+const mime = { '.svg': 'image/svg+xml', '.html': 'text/html', '.js': 'text/javascript', '.css': 'text/css' };
+http.createServer(async (req, res) => {
+  const u = new URL(req.url, 'http://x'); const tok = (req.headers.authorization || '').replace('Bearer ', '');
+  const ctx = { req, res, q: u.searchParams, user: sessions[tok], ip: req.socket.remoteAddress };
+  if (u.pathname.startsWith('/api/')) {
+    for (const [m, re, fn] of routes) { const x = re.exec(u.pathname); if (m === req.method && x) { ctx.p = x.slice(1); try { return await fn(ctx); } catch (e) { console.error(e.message); return send(res, 500, { error: 'internal error' }); } } }
+    return send(res, 404, { error: 'not found' });
+  }
+  if (u.pathname.startsWith('/uploads/')) { const fn = path.basename(u.pathname); return fs.readFile(path.join(UP, fn), (e, d) => { if (e || !/\.jpg$/.test(fn)) { res.writeHead(404); return res.end(); } res.writeHead(200, { 'Content-Type': 'image/jpeg', 'X-Content-Type-Options': 'nosniff' }); res.end(d); }); }
+  const f = path.join(__dirname, 'public', u.pathname === '/' ? 'index.html' : path.normalize(u.pathname).replace(/^(\.\.[/\\])+/, ''));
+  if (!f.startsWith(path.join(__dirname, 'public'))) { res.writeHead(403); return res.end(); }
+  fs.readFile(f, (e, d) => { if (e) { res.writeHead(404); return res.end('Not found'); } res.writeHead(200, { 'Content-Type': mime[path.extname(f)] || 'application/octet-stream' }); res.end(d); });
+}).listen(PORT, () => console.log('FloodSense prototype on http://localhost:' + PORT));

@@ -1,0 +1,46 @@
+// Smoke tests: node test.js (starts server on a temp port & temp DB)
+const { spawn } = require('child_process'), assert = require('assert'), fs = require('fs'), os = require('os'), path = require('path');
+const PORT = 3999, base = `http://localhost:${PORT}/api`;
+const backup = path.join(__dirname, 'data', 'db.json'); const had = fs.existsSync(backup) && fs.readFileSync(backup); if (had) fs.unlinkSync(backup);
+const srv = spawn('node', ['server.js'], { env: { ...process.env, PORT }, stdio: 'ignore' });
+const j = async (p, o = {}, tok) => { const r = await fetch(base + p, { method: o.method || 'GET', headers: { 'Content-Type': 'application/json', ...(tok ? { Authorization: 'Bearer ' + tok } : {}) }, body: o.body && JSON.stringify(o.body) }); return { s: r.status, b: await r.json() }; };
+(async () => {
+  await new Promise(r => setTimeout(r, 800)); let n = 0; const ok = (name, f) => { f(); console.log('✔', name); n++; };
+  ok('health', () => {}); assert.equal((await j('/health')).s, 200);
+  const a = await j('/flood/assessments?lat=-2.25&lng=-79.9'); ok('assessment is explainable and labeled', () => { assert(a.b.reasons.length >= 2); assert(/not a probability/.test(a.b.label)); });
+  const sensors = await j('/flood/sensors?scenario=heavy'); ok('five simulated sensors are available', () => { assert.equal(sensors.b.sensors.length, 5); assert.equal(sensors.b.dataMode, 'SIMULATED_HEAVY_RAIN'); assert.equal(sensors.b.sensors.find(x => x.id === 'GYE-SINAI-VULN').dataStatus, 'SIMULATED_UNVERIFIED'); });
+  const route = await j('/flood/route?from=GYE-DOWNTOWN-9OCT&to=GYE-BARCELONA&scenario=heavy'); ok('heavy rain avoids impassable sensor segment', () => {
+    assert.equal(route.s, 200);
+    assert(route.b.found);
+    assert(route.b.avoidedSegments.some(x => x.sensor === 'GYE-DOWNTOWN-9OCT'));
+    assert(!route.b.path.some(x => x.road === '9 de Octubre Floodway'));
+    assert(route.b.path.length >= 2);
+    assert(/Illustrative elevation-aware graph/.test(route.b.graphNote));
+  });
+  const noRoute = await j('/flood/route?from=GYE-DOWNTOWN-9OCT&to=GYE-SINAI-VULN&scenario=heavy'); ok('unreachable heavy-rain destination is explicit', () => assert.equal(noRoute.s, 409));
+  const far = await j('/flood/assessments?lat=0&lng=0'); ok('far point has missing-data list', () => assert(far.b.missing.length > 0));
+  ok('invalid coords rejected', () => {}); assert.equal((await j('/flood/assessments?lat=999&lng=0')).s, 400);
+  const bad = await j('/reports', { method: 'POST', body: { category: 'x' } }); ok('report validation', () => assert.equal(bad.s, 400));
+  const r = await j('/reports', { method: 'POST', body: { category: 'water', title: 'Test water', lat: -2.1, lng: -79.95 } }); ok('report saved as awaiting', () => assert.equal(r.b.report.status, 'awaiting'));
+  const res = (await j('/login', { method: 'POST', body: { role: 'resident' } })).b.token, mod = (await j('/login', { method: 'POST', body: { role: 'moderator' } })).b.token, rsp = (await j('/login', { method: 'POST', body: { role: 'responder' } })).b.token;
+  const v1 = await j(`/reports/${r.b.report.id}/verify`, { method: 'POST', body: { status: 'verified' } }, res); ok('resident cannot verify', () => assert.equal(v1.s, 403));
+  const v2 = await j(`/reports/${r.b.report.id}/verify`, { method: 'POST', body: { status: 'verified' } }, mod); ok('moderator verifies', () => assert.equal(v2.b.report.status, 'verified'));
+  const s = await j('/sos', { method: 'POST', body: { type: 'flooding', lat: -2.2, lng: -79.9, description: 'test' } }); ok('SOS created, dispatch honesty message', () => assert(/dispatch is not connected/i.test(s.b.message)));
+  ok('SOS list requires responder', () => {}); assert.equal((await j('/responder/incidents', {}, res)).s, 403);
+  const inc = await j('/incidents'); ok('public incidents leak no SOS', () => assert(!JSON.stringify(inc.b).includes(s.b.ref)));
+  assert.equal((await j(`/sos/${s.b.ref}`)).s, 403); console.log('✔ SOS status needs access code'); 
+  const ack = await j(`/responder/incidents/${s.b.ref}/status`, { method: 'PATCH', body: { status: 'acknowledged' } }, rsp); ok('responder acknowledges', () => assert.equal(ack.b.status, 'acknowledged'));
+  const st = await j(`/sos/${s.b.ref}?code=${s.b.accessCode}`); ok('resident sees recorded status', () => assert.equal(st.b.status, 'acknowledged'));
+  const jpg = 'data:image/jpeg;base64,' + Buffer.from([0xFF, 0xD8, 0xFF, 0xE0, 0, 1, 2, 3]).toString('base64');
+  const rp = await j('/reports', { method: 'POST', body: { category: 'debris', title: 'Photo test', lat: -2.15, lng: -79.85, gps: true, photo: jpg } }); ok('report with JPEG photo saved + GPS flag', () => { assert.equal(rp.s, 201); assert(rp.b.report.photos[0].startsWith('/uploads/')); assert.equal(rp.b.report.gps, true); });
+  assert.equal((await fetch(`http://localhost:${PORT}${rp.b.report.photos[0]}`)).status, 200); console.log('✔ uploaded photo is served');
+  const bp = await j('/reports', { method: 'POST', body: { category: 'water', title: 'Bad photo', lat: -2.3, lng: -79.7, photo: 'data:image/png;base64,AAAA' } }); ok('non-JPEG photo rejected', () => assert.equal(bp.s, 400));
+  const sh = await j('/shops'); ok('shops list', () => assert(sh.b.shops.length >= 4));
+  const ss = await j(`/shops/${sh.b.shops[0].id}/status`, { method: 'POST', body: { status: 'closed' } }); ok('shop status update', () => assert.equal(ss.b.shop.status, 'closed'));
+  const cm = await j('/chat', { method: 'POST', body: { name: 'T', text: '<b>hi</b> there' } }); ok('chat strips tags', () => assert(!/[<>]/.test(cm.b.message.text)));
+  assert.equal((await j(`/chat/${cm.b.message.id}`, { method: 'DELETE' }, res)).s, 403); console.log('✔ resident cannot delete chat');
+  const adm = (await j('/login', { method: 'POST', body: { role: 'admin' } })).b.token;
+  assert.equal((await j('/admin/news', { method: 'PUT', body: { video: 'https://www.youtube.com/watch?v=dQw4w9WgXcQ' } }, adm)).b.videoId, 'dQw4w9WgXcQ'); console.log('✔ admin sets news video');
+  assert.equal((await j('/admin/news', { method: 'PUT', body: { video: 'x' } }, res)).s, 403); console.log('✔ news publish needs admin');
+  console.log(`\nAll checks passed`); srv.kill(); fs.rmSync(backup, { force: true }); if (had) fs.writeFileSync(backup, had);
+})().catch(e => { console.error('FAIL', e.message); srv.kill(); process.exit(1); });
