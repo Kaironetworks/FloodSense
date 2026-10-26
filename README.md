@@ -19,7 +19,7 @@ initial demonstration environment.*
 
 ------------------------------------------------------------------------
 
-## Idea
+## Abstract
 
 Flooding is not only a weather problem. It becomes a city-wide emergency
 when people cannot tell which roads are passable, whether a reported
@@ -37,7 +37,7 @@ available evidence easier to interpret, surface missing or stale
 information, and help people make better-informed decisions under
 pressure.
 
-## Problem Story
+## Problem
 
 | The real-world problem                                                                       | FloodSense’s response                                                                                                            |
 |----------------------------------------------------------------------------------------------|----------------------------------------------------------------------------------------------------------------------------------|
