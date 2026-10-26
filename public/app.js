@@ -11,7 +11,7 @@ const I18N = {
     insufficient: 'Insufficient data', low: 'Low estimated risk', moderate: 'Moderate estimated risk', high: 'High estimated risk', critical: 'Critical estimated risk',
     awaiting: 'Awaiting verification', corroborated: 'Corroborated', verified: 'Verified', rejected: 'Rejected', resolved: 'Resolved' } };
 const CITY = { label: 'Guayaquil', fullLabel: 'Guayaquil, Ecuador', center: [-2.19, -79.9], zoom: 12, timezone: 'America/Guayaquil', data: 'backend' };
-const S = { lang: localStorage.lang || 'es', token: null, user: null, demoKey: '', pick: null, tab: 'map', layers: { zones: true, inc: true, fac: true, sensors: true }, org: null, dst: null, sensorScenario: 'baseline', hazardStale: false, alertsStale: false };
+const S = { lang: localStorage.lang || 'es', token: null, user: null, demoKey: '', pick: null, tab: 'map', layers: { zones: true, inc: true, fac: true, sensors: true }, org: null, dst: null, sensorScenario: 'baseline', hazardStale: false, alertsStale: false, weatherStale: false };
 const t = k => (I18N[S.lang][k] || k);
 const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 const $ = s => document.querySelector(s), panel = $('#panel');
@@ -19,7 +19,7 @@ const fmt = iso => iso ? new Date(iso).toLocaleString(S.lang === 'es' ? 'es-EC' 
 const city = () => CITY;
 async function api(p, o = {}) {
   const r = await fetch('/api' + p, { method: o.method || 'GET', headers: { 'Content-Type': 'application/json', ...(S.token ? { Authorization: 'Bearer ' + S.token } : {}) }, body: o.body ? JSON.stringify(o.body) : undefined });
-  const j = await r.json().catch(() => ({})); if (!r.ok) throw Object.assign(new Error(j.error || r.status), { data: j }); return j;
+  const j = await r.json().catch(() => ({})); if (!r.ok) throw Object.assign(new Error(j.error || r.status), { data: j, status: r.status }); return j;
 }
 // cache for stale/offline display: keeps original timestamp visible
 async function cached(key, p) {
@@ -35,7 +35,7 @@ const locationLabel = source => source === 'client_requested_gps' ? '📍 GPS re
 const reportErrorText = er => { const fields = er && er.data && Array.isArray(er.data.fields) ? er.data.fields.join(', ') : ''; return `${er && er.message ? er.message : 'Unable to submit report. Check your connection and try again.'}${fields ? ` (${fields})` : ''}`; };
 const BLOCK = ['flooded_road', 'closure', 'dangerous_level', 'blocked_evac'];
 // ---------- map ----------
-const mapStatus = msg => { const e = $('#map-status'); if (e) { e.textContent = msg; e.hidden = false; } };
+const mapStatus = msg => { const e = $('#map-status'); if (e) { e.textContent = msg; e.hidden = !msg; } };
 const mapUnavailable = typeof L === 'undefined';
 const emptyLayer = () => ({ clearLayers() {}, addTo() { return this; } });
 const map = mapUnavailable ? { setView() { return this; }, on() {}, addLayer() {}, removeLayer() {}, fitBounds() {}, invalidateSize() {} } : L.map('map', { zoomControl: true }).setView(city().center, city().zoom);
@@ -63,7 +63,7 @@ async function loadData(scenario = S.sensorScenario) {
 }
 if (!mapUnavailable) map.on('click', e => { setPick(e.latlng.lat, e.latlng.lng, false); });
 function setPick(lat, lng, gps) {
-  S.pick = { lat, lng }; S.pickGps = gps === true; G.pick.clearLayers(); if (!mapUnavailable) L.circleMarker([lat, lng], { radius: 8, color: '#38bdf8', fillOpacity: .5 }).addTo(G.pick);
+  S.pick = { lat, lng }; S.pickGps = gps === true; const inGye = lat >= -2.36 && lat <= -2.04 && lng >= -80.06 && lng <= -79.72; mapStatus(inGye ? '' : 'This point is outside configured coverage (Guayaquil). FloodSense will not apply Guayaquil sample hazards or service locations here.'); G.pick.clearLayers(); if (!mapUnavailable) L.circleMarker([lat, lng], { radius: 8, color: '#38bdf8', fillOpacity: .5 }).addTo(G.pick);
   if (S.tab === 'map') showAssessment(); else render();
 }
 async function showAssessment() {
@@ -72,7 +72,7 @@ async function showAssessment() {
      const colr = { low: '#38bdf8', moderate: '#fbbf24', high: '#f43f5e', critical: '#f43f5e', insufficient: '#9fb3c8' }[a.level];
     const intel = a.intelligence || {}, actions = (intel.actions || []).map(x => `<li>${esc(x.action)} — ${esc(x.reason)}</li>`).join('');
     const intelHtml = `<div class="card"><div class="row"><b>Hazard state: ${esc(intel.state || 'unavailable')}</b>${tag(intel.hazardSeverity || 'insufficient', intel.hazardSeverity || 'insufficient')}<span class="mut">Evidence confidence: ${Math.round((intel.evidenceConfidence || 0) * 100)}%</span></div><div class="mut">${esc(intel.explanation || 'Evidence fusion unavailable.')}</div>${intel.trend && intel.trend.direction === 'rising' ? `<div class="stale">Trend: water level rising at ${esc(intel.trend.waterRiseMPerHour)} m/hour.</div>` : ''}${intel.consequences && intel.consequences.affectedRoads && intel.consequences.affectedRoads.length ? `<div class="mut">Affected roads: ${intel.consequences.affectedRoads.map(r => esc(r.name)).join(', ')}</div>` : ''}${actions ? `<b>Recommended next actions</b><ul>${actions}</ul>` : ''}${intel.missing && intel.missing.length ? `<div class="mut">Unknown: ${intel.missing.map(x => esc(x)).join(' · ')}</div>` : ''}</div>`;
-    box.innerHTML = `${S.hazardStale || S.alertsStale ? '<div class="stale">⚠ Current hazard inputs are unavailable or stale. This assessment is informational only.</div>' : ''}${intelHtml}<div class="card"><div class="mut">${t('risk')} · ${esc(a.label)} · ${esc(a.version)}</div><div class="row"><span class="score">${a.level === 'insufficient' ? '—' : a.score}</span>${tag(a.level)}</div>
+    box.innerHTML = `${a.coverage === false ? '<div class="stale">No configured city coverage for this location. Guayaquil sample hazards were not applied; this is not a low-risk result.</div>' : ''}${S.hazardStale || S.alertsStale || S.weatherStale ? '<div class="stale">⚠ One or more current inputs are unavailable or stale. This assessment is informational only.</div>' : ''}${intelHtml}<div class="card"><div class="mut">${t('risk')} · ${esc(a.label)} · ${esc(a.version)}</div><div class="row"><span class="score">${a.level === 'insufficient' ? '—' : a.score}</span>${tag(a.level)}</div>
     <div class="bar"><i style="width:${a.score}%;background:${colr}"></i></div>
     <h3>${t('reasons')}</h3>${a.reasons.map(r => `<div>+${r.pts} ${esc(r.f)}<div class="mut">${esc(r.src)}</div></div>`).join('') || '<div class="mut">—</div>'}
     <h3>${t('missing')}</h3>${a.missing.map(m => `<div class="mut">• ${esc(m)}</div>`).join('')}
@@ -89,15 +89,28 @@ const TABS = ['map', 'feed', 'report', 'sos', 'route', 'services', 'chat', 'ops'
 function nav() { $('#nav').innerHTML = TABS.map(k => `<button role="tab" aria-selected="${S.tab === k}" class="${k === 'sos' ? 's' : ''}" data-t="${k}">${t(k)}</button>`).join(''); $('#nav').querySelectorAll('button').forEach(b => b.onclick = () => { S.tab = b.dataset.t; render(); }); }
 const V = {};
 V.map = async () => {
-  const a = await cached('c_alerts', '/alerts');
-  S.alertsStale = !!a.stale;
+  const [a, weatherResult] = await Promise.all([
+    cached('c_alerts', '/alerts'),
+    api('/weather/current').catch(e => e.data || { status: 'unavailable', stale: true, note: 'Weather provider is unreachable. No live value is available.' })
+  ]);
+  const w = weatherResult;
+  S.alertsStale = !!a.stale; S.weatherStale = w.status !== 'available' || !!w.stale;
+  const weatherCard = w.status === 'available' || w.status === 'stale'
+    ? `<div class="card"><div class="row"><b>Current weather context · Guayaquil</b>${tag(w.stale ? 'moderate' : 'low', w.stale ? 'STALE MODEL DATA' : 'MODEL DATA')}</div>
+      <div class="row"><span><b>${Number.isFinite(w.temperatureC) ? w.temperatureC + ' °C' : '—'}</b><div class="mut">Temperature</div></span><span><b>${Number.isFinite(w.relativeHumidityPct) ? w.relativeHumidityPct + '%' : '—'}</b><div class="mut">Humidity</div></span><span><b>${Number.isFinite(w.hourlyPrecipitationMm) ? w.hourlyPrecipitationMm + ' mm' : '—'}</b><div class="mut">Modelled hourly rain</div></span><span><b>${Number.isFinite(w.windSpeedKmh) ? w.windSpeedKmh + ' km/h' : '—'}</b><div class="mut">Wind</div></span></div>
+      <div class="mut">Source: ${esc(w.source)} · model time ${fmt(w.modelTime)} · retrieved ${fmt(w.retrievedAt)}${w.stale ? ' · refresh failed or data is old' : ''}</div>
+      <div class="mut">${esc(w.note || 'Modelled weather, not a direct station observation.')}</div>
+      <button class="btn" id="weatherRefresh">Refresh weather</button></div>`
+    : `<div class="card"><div class="row"><b>Current weather context · Guayaquil</b>${tag('rejected', 'UNAVAILABLE')}</div><div class="stale">${esc(w.note || 'No live weather value available. No value has been invented.')}</div><button class="btn" id="weatherRefresh">Retry weather source</button></div>`;
   panel.innerHTML = `${staleNote(a.stale || S.stale)}
   <div class="row"><input id="q" placeholder="Search address / barrio…" aria-label="Search"><button class="btn" id="qb">🔍</button><button class="btn" id="gps">📍</button></div>
+  ${weatherCard}
   ${a.d.alerts.map(x => `<div class="card"><div class="row">${tag(x.severity)}<b>${esc(x.title)}</b></div><div class="mut">${x.official ? 'Official-type' : ''} · ${esc(x.source)}<br>Published ${fmt(x.published)} · valid until ${fmt(x.validUntil)} · ${x.fresh ? 'current' : 'EXPIRED'} · ${x.rainMmH} mm/h (demo)</div></div>`).join('')}
   <h3>${t('layers')}</h3><div class="row">${[['zones', 'zones'], ['inc', 'inc'], ['fac', 'fac'], ['sensors', 'sensors']].map(([k, l]) => `<label style="display:flex;gap:6px;margin:0"><input type="checkbox" style="width:auto" data-l="${k}" ${S.layers[k] ? 'checked' : ''}>${t(l)}</label>`).join('')}</div>
   <div class="legend card"><span><i style="background:#f43f5e55;border:1px dashed #f43f5e"></i>Susceptibility zone (historical)</span><span><i style="background:#34d399;border-radius:50%"></i>Verified incident</span><span><i style="border:2px dashed #fbbf24;border-radius:50%"></i>Unverified report</span><span><i style="background:#38bdf8"></i>Facility (H/S/P/F)</span></div>
   <div id="assess" class="mut">${t('click')}</div>`;
   $('#qb').onclick = () => search($('#q').value); $('#q').onkeydown = e => { if (e.key === 'Enter') search(e.target.value); }; $('#gps').onclick = () => locate(setPick);
+  $('#weatherRefresh').onclick = async () => { $('#weatherRefresh').disabled = true; $('#weatherRefresh').textContent = 'Refreshing…'; try { await api('/weather/current?refresh=1'); } catch {} await V.map(); };
   panel.querySelectorAll('[data-l]').forEach(c => c.onchange = () => { S.layers[c.dataset.l] = c.checked; drawLayers(); }); if (S.pick) showAssessment();
 };
 V.feed = async () => {
@@ -124,17 +137,37 @@ V.report = () => {
 };
 V.sos = () => {
   const saved = JSON.parse(localStorage.sos || 'null');
+  const pending = JSON.parse(localStorage.pendingSos || '[]');
   panel.innerHTML = `<div class="card" style="border-color:#f43f5e"><b>In danger? Call 911 first.</b><br><a class="btn sos" href="tel:911">${t('call')}</a></div>
-  <h2>SOS</h2><p class="mut">Shared: your location, emergency type and description go to the FloodSense response dashboard (responders only, never public). <b>Official emergency dispatch is not connected.</b></p>
+  <h2>SOS</h2><p class="mut">When online, a submitted request is sent to the FloodSense server response dashboard. <b>Official emergency dispatch is not connected.</b> If offline, you may explicitly save a request on this device; it is NOT SENT until the server accepts it.</p>
+  ${pending.map((x,i) => `<div class="stale"><b>NOT SENT — WAITING FOR CONNECTION</b><br>Local request ${i+1} · saved ${fmt(x.queuedAt)}. It has not reached responders. Keep this page open for automatic retry when connection returns.${x.lastError ? `<div class="err">${esc(x.lastError)}</div>` : ''}<br><button class="btn" data-pending-remove="${esc(x.clientRequestId)}">Discard local request</button></div>`).join('')}
   <form id="f"><label>Type</label><select name="type"><option value="flooding">Flooding</option><option value="trapped">Trapped person</option><option value="medical">Medical emergency</option><option value="evacuation">Evacuation assistance</option><option value="other">Other</option></select>
   <label>Short description</label><textarea name="description" rows="2" maxlength="400"></textarea>
   <label>Location</label><div class="card">${S.pick ? `📍 ${S.pick.lat.toFixed(5)}, ${S.pick.lng.toFixed(5)}` : 'Tap the map or use GPS.'} <button type="button" class="btn" id="gps">Use GPS</button></div>
   <button class="btn sos" ${S.pick ? '' : 'disabled'}>Send SOS request</button></form><div id="out"></div>
   ${saved ? `<h3>Your last request</h3><div class="card">Ref ${esc(saved.ref)} · code ${esc(saved.code)}<div id="st" class="mut"></div><div class="row"><button class="btn" id="chk">Check status</button><button class="btn" id="can">Cancel (false alarm)</button></div></div>` : ''}`;
   $('#gps').onclick = () => locate(setPick);
-  $('#f').onsubmit = async e => { e.preventDefault(); if (!confirm('Send SOS to the FloodSense response dashboard?\nThis does NOT contact official dispatch. Call 911 if in danger.')) return;
-    try { const d = Object.fromEntries(new FormData(e.target)); const r = await api('/sos', { method: 'POST', body: { ...d, ...S.pick } }); localStorage.sos = JSON.stringify({ ref: r.ref, code: r.accessCode });
-      $('#out').innerHTML = `<div class="card good"><b>Ref ${esc(r.ref)}</b> · access code <b>${esc(r.accessCode)}</b><br>Status: ${esc(r.status)}<br>${esc(r.message)}</div>`; } catch (er) { $('#out').innerHTML = `<div class="card err">${esc(er.message)}</div>`; } };
+  $('#f').onsubmit = async e => {
+    e.preventDefault();
+    if (!confirm('Submit an SOS request to the FloodSense server? This does NOT contact official dispatch. Call 911 if in danger.')) return;
+    const d = Object.fromEntries(new FormData(e.target));
+    const request = { ...d, ...S.pick, clientRequestId: (crypto.randomUUID ? crypto.randomUUID() : 'fs-' + Date.now() + '-' + Math.random().toString(16).slice(2)) };
+    if (!navigator.onLine) {
+      if (!confirm('You are offline. Save this request on this device for retry? It will NOT alert anyone until the server accepts it. The location and description will be stored in this browser.')) return;
+      const q = JSON.parse(localStorage.pendingSos || '[]'); q.push({ ...request, queuedAt: new Date().toISOString() }); localStorage.pendingSos = JSON.stringify(q);
+      $('#out').innerHTML = '<div class="stale"><b>NOT SENT — WAITING FOR CONNECTION.</b> This request is stored only in this browser. No responder has received it. Keep this page open and use official emergency channels.</div>';
+      V.sos(); return;
+    }
+    try {
+      const r = await api('/sos', { method: 'POST', body: request });
+      localStorage.sos = JSON.stringify({ ref: r.ref, code: r.accessCode });
+      $('#out').innerHTML = `<div class="card good"><b>Accepted by FloodSense server: ${esc(r.ref)}</b> · access code <b>${esc(r.accessCode)}</b><br>Status: ${esc(r.status)}<br>${esc(r.message)}</div>`;
+    } catch (er) {
+      const message = er.status ? `Server did not accept the request (HTTP ${er.status}): ${er.message}` : 'Submission outcome could not be confirmed. Do not assume it was sent; check your connection and contact official emergency services.';
+      $('#out').innerHTML = `<div class="card err">${esc(message)}</div>`;
+    }
+  };
+  panel.querySelectorAll('[data-pending-remove]').forEach(b => b.onclick = () => { const q = JSON.parse(localStorage.pendingSos || '[]').filter(x => x.clientRequestId !== b.dataset.pendingRemove); localStorage.pendingSos = JSON.stringify(q); V.sos(); });
   if (saved) { $('#chk').onclick = async () => { try { const r = await api(`/sos/${saved.ref}/status`, { method: 'POST', body: { code: saved.code } }); $('#st').innerHTML = `Recorded status: <b>${esc(r.status)}</b> (${fmt(r.history.at(-1).at)}). Dispatch connected: no.`; } catch (er) { $('#st').textContent = er.message; } };
     $('#can').onclick = async () => { try { await api(`/sos/${saved.ref}/cancel`, { method: 'POST', body: { code: saved.code } }); $('#st').textContent = 'Cancelled as false alarm.'; } catch (er) { $('#st').textContent = er.message; } }; }
 };
@@ -191,7 +224,7 @@ function showResults(items, ok, head, notice = '') {
 }
 V.route = () => {
   const p = x => x ? `${x.lat.toFixed(4)}, ${x.lng.toFixed(4)}` : '—';
-  panel.innerHTML = `<h2>${t('route')}</h2><button class="btn pri" id="sensorDemo" style="width:100%">🌧 Heavy-rain sensor route demo</button><button class="btn pri" id="hos" style="width:100%;margin-top:8px">🏥 Nearest hospital: show best path</button><p class="mut">The demo uses the illustrative elevation-aware sensor graph. Other routes use OSRM road geometry and score simulated sensor hazards plus verified incidents.</p>
+  panel.innerHTML = `<h2>${t('route')}</h2><button class="btn pri" id="sensorDemo" style="width:100%">🧪 Scenario Lab · simulate heavy rain</button><button class="btn pri" id="hos" style="width:100%;margin-top:8px">🏥 Nearest hospital: show best path</button><div class="stale"><b>SCENARIO LAB — SIMULATION ONLY.</b> This controlled heavy-rain scenario uses deterministic sample sensors and an illustrative road graph. It does not change the live weather feed or create real reports/SOS records.</div><p class="mut">Other routes use OSRM road geometry and compare it with configured sample hazard zones and verified incident reports. A route score is not a safety guarantee.</p>
   <div class="card">Origin: <b>${p(S.org)}</b> <button class="btn" id="so">Use picked</button> <button class="btn" id="go">GPS</button><br>Destination: <b>${p(S.dst)}</b> <button class="btn" id="sd">Use picked</button></div>
   <div class="row"><select id="mode" style="width:auto"><option value="driving">Driving</option><option value="foot">Walking</option></select><button class="btn" id="calc">Compare routes</button></div><div id="out"></div><h3>Verified blocked streets</h3>${blockedPanel(null)}`;
   $('#so').onclick = () => { if (S.pick) { S.org = S.pick; V.route(); } }; $('#sd').onclick = () => { if (S.pick) { S.dst = S.pick; V.route(); } }; $('#go').onclick = () => locate((la, ln) => { S.org = { lat: la, lng: ln }; V.route(); });
@@ -202,8 +235,9 @@ async function demoSensorRoute() {
   try {
     await loadData('heavy');
     const r = await api('/flood/route?from=GYE-DOWNTOWN-9OCT&to=GYE-BARCELONA&scenario=heavy');
-    $('#out').innerHTML = `<h3>Heavy-rain sensor route</h3><div class="card"><b>${r.totalDistanceKm} km alternate path</b> · weighted cost ${r.totalCost}<br>${r.path.map(x => `${esc(x.road)} (${x.distanceKm} km, elevation ${x.elevationM} m)`).join(' → ')}<div class="stale">Avoided: ${r.avoidedSegments.map(x => `${esc(x.road)} (${esc(x.sensor)} sensor)`).join(', ') || 'none'}<br>Sensor readings are simulated and unverified; graph is illustrative, not a verified road network.</div></div>`;
+    $('#out').innerHTML = `<h3>Scenario Lab result · heavy rain</h3><div class="card"><b>${r.totalDistanceKm} km alternate path</b> · weighted cost ${r.totalCost}<br>${r.path.map(x => `${esc(x.road)} (${x.distanceKm} km, elevation ${x.elevationM} m)`).join(' → ')}<div class="stale">Avoided: ${r.avoidedSegments.map(x => `${esc(x.road)} (${esc(x.sensor)} sensor)`).join(', ') || 'none'}<br>SIMULATED ONLY. Sensor readings and road graph are illustrative and unverified. Live weather was not modified.</div></div>`;
   } catch (e) { $('#out').innerHTML = `<div class="card err">${esc(e.message)}</div>`; }
+  finally { try { await loadData('baseline'); } catch {} }
 }
 async function calcRoute(mode) {
   if (S.hazardStale) return $('#out').innerHTML = '<div class="stale">Current hazard data is unavailable or stale. Route comparison is disabled until it can be refreshed.</div>';
@@ -263,7 +297,7 @@ V.ops = async () => {
   if (S.user && ['moderator', 'admin'].includes(S.user.role)) { const i = await api('/incidents'); h += `<h3>Moderation queue</h3>${i.incidents.filter(r => ['awaiting', 'corroborated'].includes(r.status)).map(r => `<div class="card"><b>${esc(r.title)}</b> ${tag(r.status)}<div class="row"><button class="btn ok" data-v="${r.id}:verified">Verify</button><button class="btn" data-v="${r.id}:rejected">Reject</button></div></div>`).join('') || '<div class="mut">Queue empty.</div>'}`; }
   if (S.user && ['responder', 'admin'].includes(S.user.role)) { const s = await api('/responder/incidents'); h += `<h3>SOS incidents (private)</h3>${s.incidents.map(x => `<div class="card"><b>${esc(x.id)}</b> ${tag('high', x.status)} ${esc(x.type)}<div class="mut">${esc(x.description)}<br>📍 ${x.lat.toFixed(4)}, ${x.lng.toFixed(4)} · ${fmt(x.created)}</div><div class="row">${['acknowledged', 'assigned', 'en_route', 'resolved', 'unable_to_respond'].map(st => `<button class="btn" data-s="${x.id}:${st}">${st}</button>`).join('')}</div></div>`).join('') || '<div class="mut">No SOS requests.</div>'}`; }
   if (S.user && S.user.role === 'admin') { const a = await api('/admin/audit-logs'); h += `<h3>Audit log</h3><div class="card mut">${a.logs.slice(0, 12).map(l => `${fmt(l.at)} · ${esc(l.who)} · ${esc(l.action)} ${esc(l.target)}`).join('<br>')}</div><button class="btn" id="reset">Reset demo data</button>`; }
-  h += `<h3>Guided demo scenario</h3><div class="card"><div id="demoSt" class="mut">Runs local API flows: report → corroboration → verification → deterministic local route → SOS → responder acknowledgement.</div><button class="btn pri" id="scn">Run next step</button></div>`;
+  h += `<h3>Guided demo scenario</h3><div class="card"><div id="demoSt" class="mut">Runs a browser-local scenario timeline. It does not write demo reports or SOS records into the shared incident database.</div><button class="btn pri" id="scn">Run next step</button></div>`;
   panel.innerHTML = h;
   panel.querySelectorAll('[data-r]').forEach(b => b.onclick = () => signIn(b.dataset.r)); if ($('#out')) $('#out').onclick = () => { S.token = S.user = null; whoami(); render(); };
   panel.querySelectorAll('[data-v]').forEach(b => b.onclick = async () => { const [id, st] = b.dataset.v.split(':'); await api(`/reports/${id}/verify`, { method: 'POST', body: { status: st } }); await loadData(); render(); });
@@ -273,20 +307,36 @@ V.ops = async () => {
 };
 async function signIn(role) { S.demoKey = $('#demoKey') ? $('#demoKey').value : S.demoKey; const r = await api('/login', { method: 'POST', body: { role, demoKey: S.demoKey } }); S.token = r.token; S.user = r.user; whoami(); render(); }
 const whoami = () => $('#who').textContent = S.user ? S.user.name : '';
-let step = 0, scn = {};
+let step = 0;
 function say(m) { let e = $('#toast'); if (!e) { e = document.createElement('div'); e.id = 'toast'; document.body.append(e); } e.innerHTML = `<span>${esc(m)}</span> <button class="btn pri" id="tn">Next step</button>`; $('#tn').onclick = nextStep; const d = $('#demoSt'); if (d) d.textContent = m; }
 async function nextStep() {
-  const st = { set textContent(m) { say(m); }, set innerHTML(m) { say(m); } }, as = async (role, fn) => { const keep = [S.token, S.user]; await signIn0(role); try { return await fn(); } finally { [S.token, S.user] = keep; } };
-  const at = { lat: -2.2600, lng: -79.8900 };
+  const messages = [
+    '1/6 Scenario active: simulated heavy rainfall is introduced. Live weather and production records remain unchanged.',
+    '2/6 Scenario report: SIM-REPORT-01 is created in the scenario timeline only (not in the incident database).',
+    '3/6 Independent simulated witness: the scenario report becomes corroborated; this does not verify a real road condition.',
+    '4/6 Scenario moderator action: SIM-REPORT-01 is marked verified inside the scenario timeline only.',
+    '5/6 Scenario routing: request the deterministic heavy-rain route and inspect the avoided simulated segment.',
+    '6/6 Scenario SOS: SIM-SOS-01 moves from received to acknowledged in the scenario timeline only. No real SOS record or dispatch was created.'
+  ];
   try {
-    if (step === 0) { map.setView([at.lat, at.lng], 14); say('1/6 Heavy rain: demo warning active (38 mm/h). Elevated estimated risk in Guasmo zone.'); }
-    else if (step === 1) { const r = await api('/reports', { method: 'POST', body: { category: 'flooded_road', title: 'DEMO: flooded road, Guasmo', description: 'scenario', ...at, severity: 'high' } }); scn.id = r.report.id; st.textContent = `2/6 Resident report ${scn.id} saved: ${r.report.status}.`; }
-    else if (step === 2) { const r = await api('/reports', { method: 'POST', body: { category: 'flooded_road', title: 'DEMO: second witness', ...at } }); st.textContent = `3/6 Second user corroborates: ${r.report.status} (${r.report.corroborations}).`; }
-    else if (step === 3) { await as('moderator', () => api(`/reports/${scn.id}/verify`, { method: 'POST', body: { status: 'verified' } })); st.textContent = '4/6 Moderator verified. Map and feed updated.'; }
-    else if (step === 4) { S.org = { lat: -2.2300, lng: -79.9000 }; S.dst = { lat: -2.2900, lng: -79.8800 }; S.tab = 'route'; await render(); await demoSensorRoute(); say('5/6 Deterministic heavy-rain route requested from the local API; the simulated blocked segment is shown explicitly.'); }
-    else if (step === 5) { const r = await api('/sos', { method: 'POST', body: { type: 'flooding', description: 'DEMO TEST SOS', ...at } }); scn.sos = r.ref; await as('responder', () => api(`/responder/incidents/${r.ref}/status`, { method: 'PATCH', body: { status: 'acknowledged', note: 'demo ack' } })); st.textContent = `6/6 TEST SOS ${r.ref} created and acknowledged by responder. Dispatch is not connected. Scenario done.`; step = -1; }
-    step++; await loadData();
-  } catch (e) { st.innerHTML = `<span class="err">Step failed: ${esc(e.message)}</span>`; }
+    if (step === 0) {
+      S.sensorScenario = 'baseline';
+      $('#demoSt').textContent = messages[step];
+    } else if (step === 4) {
+      S.org = { lat: -2.1944, lng: -79.8883 }; S.dst = { lat: -2.2011, lng: -79.9234 }; S.tab = 'route';
+      await render(); await demoSensorRoute();
+      say(messages[step]); step++; return;
+    } else {
+      $('#demoSt').textContent = messages[step];
+    }
+    const msg = messages[step];
+    if (step === 5) step = -1;
+    step++;
+    const d = $('#demoSt'); if (d) d.textContent = msg;
+    say(msg);
+  } catch (e) {
+    const d = $('#demoSt'); if (d) d.textContent = 'Scenario step failed: ' + e.message;
+  }
 }
 async function signIn0(role) { const r = await api('/login', { method: 'POST', body: { role, demoKey: S.demoKey } }); S.token = r.token; S.user = r.user; }
 let chatTimer;
@@ -294,7 +344,7 @@ async function render() { clearInterval(chatTimer); nav(); try { await V[S.tab](
 function applyCity() {
   $('#city').textContent = city().label;
   document.title = `FloodSense — ${city().label}`;
-  $('#demo').textContent = 'DEMO DATA — NOT FOR REAL EMERGENCY USE · DATOS DE DEMOSTRACIÓN — NO USAR EN EMERGENCIAS REALES';
+  $('#demo').textContent = 'MIXED MODE: MODELLED WEATHER + DEMO HAZARDS · NOT FOR REAL EMERGENCY USE / MODO MIXTO: CLIMA MODELADO + RIESGOS DE DEMOSTRACIÓN · NO USAR EN EMERGENCIAS REALES';
   map.setView(city().center, city().zoom);
   G.route.clearLayers(); G.pick.clearLayers();
   S.pick = S.org = S.dst = null;
@@ -305,5 +355,33 @@ $('#lang').onclick = () => { S.lang = S.lang === 'es' ? 'en' : 'es'; localStorag
 $('#lang').textContent = S.lang === 'es' ? 'EN' : 'ES';
 applyCity();
 setInterval(() => $('#clock').textContent = new Date().toLocaleTimeString(S.lang === 'es' ? 'es-EC' : 'en-US', { timeZone: city().timezone }) + ' GYE', 1000);
-addEventListener('online', () => loadData()); addEventListener('offline', () => { $('#net').textContent = 'offline'; $('#net').className = 'tag t-high'; });
+async function syncPendingSos() {
+  if (!navigator.onLine) return;
+  const queue = JSON.parse(localStorage.pendingSos || '[]');
+  if (!queue.length) return;
+  const remaining = [];
+  for (const item of queue) {
+    try {
+      const r = await api('/sos', { method: 'POST', body: item });
+      localStorage.sos = JSON.stringify({ ref: r.ref, code: r.accessCode });
+      if (S.tab === 'sos') {
+        const msg = document.createElement('div'); msg.className = 'card good';
+        msg.textContent = `Queued SOS accepted by FloodSense server: ${r.ref}. Official dispatch is not connected.`;
+        panel.prepend(msg);
+      }
+    } catch (e) {
+      remaining.push(item);
+      if (e.status) {
+        // Server explicitly rejected it; keep it visible for the user to decide what to do.
+        item.lastError = `Server rejected request (HTTP ${e.status}): ${e.message}`;
+      }
+    }
+  }
+  localStorage.pendingSos = JSON.stringify(remaining);
+  if (S.tab === 'sos') V.sos();
+}
+addEventListener('online', () => { loadData(); syncPendingSos(); });
+addEventListener('offline', () => { $('#net').textContent = 'offline'; $('#net').className = 'tag t-high'; });
+
 loadData().then(render).catch(() => render());
+if (navigator.onLine) syncPendingSos();

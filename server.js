@@ -125,7 +125,16 @@ function sensorRoute(from, to, heavy) {
   }
   return { found: true, from, to, path, totalDistanceKm: +path.reduce((sum, e) => sum + e.distanceKm, 0).toFixed(2), totalCost: +distances.get(to).toFixed(2), avoidedSegments, dataMode: heavy ? 'SIMULATED_HEAVY_RAIN' : 'SIMULATED_BASELINE', graphNote: 'Illustrative elevation-aware graph, not a verified Guayaquil road network.' };
 }
-function assess(lat, lng) {
+function assess(lat, lng, weather = null) {
+  // Current demo coverage is limited to the configured Guayaquil urban envelope.
+  // Never apply its seeded polygons/sensors to arbitrary GPS coordinates.
+  const inConfiguredArea = lat >= -2.36 && lat <= -2.04 && lng >= -80.06 && lng <= -79.72;
+  if (!inConfiguredArea) return {
+    version: 'rules-0.3', label: 'Estimated risk score (not a probability)', score: 0, level: 'insufficient',
+    reasons: [], missing: ['No city profile or validated hazard layers are configured for this location. Guayaquil demo data was not applied.'],
+    computedAt: now(), dataMode: 'NO_CONFIGURED_CITY_COVERAGE', demo: true, coverage: false,
+    intelligence: { state: 'no_signal', hazardSeverity: 'insufficient', evidenceConfidence: 0, hazardIndex: 0, explanation: 'FloodSense has no configured local hazard evidence for this location. No safety conclusion can be drawn.', actions: [], missing: ['City profile unavailable', 'No local hazard sources configured'], consequences: { level: 'unknown', affectedRoads: [], affectedFacilities: [] } }
+  };
   const reasons = [], missing = []; let score = 0, signals = 0;
   const active = db.alerts.filter(a => new Date(a.validUntil) > new Date());
   const official = active.filter(a => a.official === true && a.demo !== true && !String(a.source || '').toUpperCase().startsWith('DEMO'));
@@ -137,6 +146,15 @@ function assess(lat, lng) {
   if (z) { const w = z.level === 'high' ? 30 : 15; score += w; signals++; reasons.push({ f: 'Inside susceptibility zone: ' + z.name, pts: w, src: 'Historical susceptibility, not current flooding' }); } else missing.push('Not inside any loaded susceptibility polygon (coverage is coarse and partial)');
   const near = db.reports.filter(r => r.status === 'verified' && km(lat, lng, r.lat, r.lng) < 1.5 && Date.now() - new Date(r.updated) < 24 * 3600e3);
   if (near.length) { const w = Math.min(25, 12 * near.length); score += w; signals++; reasons.push({ f: near.length + ' verified report(s) within 1.5 km, last 24 h', pts: w, src: 'Community, moderator-verified' }); } else missing.push('No verified reports nearby (absence is not proof of safety)');
+  if (weather && weather.status === 'available' && !weather.stale && Number.isFinite(weather.hourlyPrecipitationMm)) {
+    const rain = weather.hourlyPrecipitationMm;
+    const w = rain >= 10 ? 15 : rain >= 2.5 ? 8 : rain > 0 ? 3 : 0;
+    score += w;
+    signals++;
+    reasons.push({ f: `Modelled hourly precipitation: ${rain.toFixed(1)} mm`, pts: w, src: 'Open-Meteo forecast model; Guayaquil city-grid estimate, not a rain-gauge observation' });
+  } else {
+    missing.push('No fresh modelled weather value available (weather source may be unavailable or stale)');
+  }
   const sensor = nearestSensor(lat, lng);
   if (sensor.distanceKm <= 2.5) {
     const depth = sensor.normalDepth;
@@ -149,16 +167,19 @@ function assess(lat, lng) {
   }
   missing.push('Google Flood Hub: not connected', 'Satellite SAR: not integrated');
   const level = signals === 0 ? 'insufficient' : score >= 70 ? 'critical' : score >= 45 ? 'high' : score >= 20 ? 'moderate' : 'low';
-  return { version: 'rules-0.2', label: 'Estimated risk score (not a probability)', score: Math.min(100, score), level, reasons, missing, computedAt: now(), dataMode: 'SIMULATED_LOCAL_INPUTS', demo: true, intelligence: buildIntelligence(lat, lng) };
+  return { version: 'rules-0.3', label: 'Estimated risk score (not a probability)', score: Math.min(100, score), level, reasons, missing, computedAt: now(), dataMode: weather && weather.status === 'available' && !weather.stale ? 'MODELLED_WEATHER_PLUS_SIMULATED_LOCAL_INPUTS' : 'SIMULATED_LOCAL_INPUTS_WEATHER_UNAVAILABLE', demo: true, coverage: true, intelligence: buildIntelligence(lat, lng, weather) };
 }
 
-function buildIntelligence(lat, lng) {
+function buildIntelligence(lat, lng, weather = null) {
   const evidence = [], active = db.alerts.filter(a => new Date(a.validUntil) > new Date());
   active.forEach(a => evidence.push({ id: a.id, type: 'rainfall', valueMmH: a.rainMmH, observedAt: a.published, sourceId: a.source || a.id, reliability: a.official && !a.demo ? 0.8 : 0.25, lat, lng }));
   const sensor = nearestSensor(lat, lng);
   if (sensor.distanceKm <= 2.5) evidence.push({ id: sensor.id, type: 'water_level', valueM: sensor.normalDepth, thresholdM: 1, observedAt: now(), sourceId: sensor.id, reliability: 0.45, lat: sensor.lat, lng: sensor.lng });
   const zone = db.zones.find(z => inPoly(lat, lng, z.poly));
   if (zone) evidence.push({ id: zone.id, type: 'terrain', level: zone.level, observedAt: now(), sourceId: zone.id, reliability: 0.7, lat, lng });
+  if (weather && weather.status === 'available' && !weather.stale && Number.isFinite(weather.hourlyPrecipitationMm) && weather.modelTime) {
+    evidence.push({ id: 'OPEN_METEO_GYE_CURRENT', type: 'rainfall', valueMmH: weather.hourlyPrecipitationMm, observedAt: weather.modelTime, sourceId: 'Open-Meteo modelled hourly precipitation', reliability: 0.4, lat: weather.latitude, lng: weather.longitude, dataClass: 'modelled_weather' });
+  }
   const roads = [];
   db.reports.filter(r => r.status !== 'rejected').forEach(r => {
     evidence.push({ id: r.id, type: 'citizen_report', category: r.category, severity: r.severity, observedAt: r.updated || r.created, sourceId: r.by || r.id, reliability: r.status === 'verified' ? 0.65 : 0.25, lat: r.lat, lng: r.lng });
@@ -194,12 +215,61 @@ const NEWS_LINKS = [['INAMHI alerts', 'https://servicios.inamhi.gob.ec/alertas/'
 const num = (v, lo, hi) => typeof v === 'number' && v >= lo && v <= hi;
 const clean = (s, n) => String(s || '').replace(/[<>]/g, '').slice(0, n);
 let osrmCache = { at: 0, ok: null };
+const WEATHER_URL = 'https://api.open-meteo.com/v1/forecast?latitude=-2.19&longitude=-79.90&current=temperature_2m,relative_humidity_2m,precipitation,rain,showers,weather_code,wind_speed_10m&hourly=precipitation,precipitation_probability&forecast_days=1&timezone=GMT';
+let weatherCache = { fetchedAt: null, data: null, error: null, attemptAt: null };
+async function getWeather(force = false) {
+  const age = weatherCache.fetchedAt ? Date.now() - new Date(weatherCache.fetchedAt).getTime() : Infinity;
+  if (!force && !weatherCache.data && weatherCache.attemptAt && Date.now() - weatherCache.attemptAt < 30000) return { status: 'unavailable', stale: true, source: 'Open-Meteo', sourceType: 'modelled_weather', location: 'Guayaquil, Ecuador', retrievedAt: null, modelTime: null, data: null, error: weatherCache.error || 'provider_unavailable', note: 'Weather source was recently unavailable. No value has been invented; retry after the short backoff period.' };
+  weatherCache.attemptAt = Date.now();
+  if (!force && weatherCache.data && age < 10 * 60000) {
+    const stale = !!weatherCache.error || age > 60 * 60000;
+    return { ...weatherCache.data, cacheAgeSeconds: Math.round(age / 1000), stale, status: stale ? 'stale' : 'available', ...(stale ? { refreshError: weatherCache.error || 'cache_expired' } : {}) };
+  }
+  try {
+    const controller = new AbortController(), timer = setTimeout(() => controller.abort(), 5000);
+    let response;
+    try { response = await fetch(WEATHER_URL, { signal: controller.signal, headers: { 'Accept': 'application/json' } }); }
+    finally { clearTimeout(timer); }
+    if (!response.ok) throw new Error('weather provider HTTP ' + response.status);
+    const payload = await response.json(), current = payload.current || {}, hourly = payload.hourly || {};
+    if (!current.time || !Number.isFinite(current.temperature_2m) || !Number.isFinite(current.precipitation)) throw new Error('weather provider response incomplete');
+    const hourKey = String(current.time).slice(0, 13);
+    const modelTime = new Date(/[zZ]|[+-]\d{2}:\d{2}$/.test(String(current.time)) ? String(current.time) : String(current.time) + 'Z').toISOString();
+    const hi = Array.isArray(hourly.time) ? hourly.time.findIndex(t => String(t).slice(0, 13) === hourKey) : -1;
+    const hourlyPrecip = hi >= 0 && Array.isArray(hourly.precipitation) && Number.isFinite(hourly.precipitation[hi]) ? hourly.precipitation[hi] : null;
+    const probability = hi >= 0 && Array.isArray(hourly.precipitation_probability) && Number.isFinite(hourly.precipitation_probability[hi]) ? hourly.precipitation_probability[hi] : null;
+    const fetchedAt = now();
+    const data = {
+      status: 'available', stale: false, source: 'Open-Meteo', sourceType: 'modelled_weather',
+      sourceUrl: 'https://open-meteo.com/', location: 'Guayaquil, Ecuador (city-grid estimate)',
+      latitude: Number.isFinite(payload.latitude) ? payload.latitude : -2.19,
+      longitude: Number.isFinite(payload.longitude) ? payload.longitude : -79.90,
+      timezone: 'UTC', modelTime, retrievedAt: fetchedAt,
+      temperatureC: current.temperature_2m, relativeHumidityPct: current.relative_humidity_2m,
+      precipitationMm: current.precipitation, rainMm: Number.isFinite(current.rain) ? current.rain : null,
+      showersMm: Number.isFinite(current.showers) ? current.showers : null,
+      hourlyPrecipitationMm: hourlyPrecip, precipitationProbabilityPct: probability,
+      windSpeedKmh: current.wind_speed_10m, weatherCode: current.weather_code,
+      units: payload.current_units || {}, note: 'Forecast-model output for a city grid point; not a direct rain-gauge observation and not street-level flood measurement.'
+    };
+    weatherCache = { fetchedAt, data, error: null, attemptAt: Date.now() };
+    return { ...data, cacheAgeSeconds: 0, status: 'available', stale: false };
+  } catch (e) {
+    weatherCache.error = e.name === 'AbortError' ? 'provider_timeout' : 'provider_unavailable'; weatherCache.attemptAt = Date.now();
+    if (weatherCache.data) {
+      const oldAge = Date.now() - new Date(weatherCache.fetchedAt).getTime();
+      return { ...weatherCache.data, status: 'stale', stale: true, cacheAgeSeconds: Math.round(oldAge / 1000), note: weatherCache.data.note + ' Latest refresh failed; this cached value may be outdated.', refreshError: weatherCache.error };
+    }
+    return { status: 'unavailable', stale: true, source: 'Open-Meteo', sourceType: 'modelled_weather', location: 'Guayaquil, Ecuador', retrievedAt: null, modelTime: null, data: null, error: weatherCache.error, note: 'No live modelled weather value is available. Retry when connectivity returns; no value has been invented.' };
+  }
+}
 async function sources() {
   if (Date.now() - osrmCache.at > 60000) { try { const c = new AbortController(); setTimeout(() => c.abort(), 4000); const r = await fetch('https://router.project-osrm.org/route/v1/driving/-79.89,-2.19;-79.90,-2.20', { signal: c.signal }); osrmCache = { at: Date.now(), ok: r.ok, ts: now() }; } catch (e) { osrmCache = { at: Date.now(), ok: false }; } }
   const nc = (name, type, url, why) => ({ name, type, url, status: 'not_configured', lastSuccess: null, note: why });
   return [
     { name: 'OSRM public routing (demo server)', type: 'routing', url: 'https://router.project-osrm.org', status: osrmCache.ok ? 'connected' : 'unavailable', lastSuccess: osrmCache.ok ? osrmCache.ts : null, note: 'Public demo server, no SLA. Not for production.' },
     { name: 'Seeded demo database', type: 'demo', url: '-', status: 'demo', lastSuccess: null, note: 'Fictional data, clearly labeled.' },
+    { name: 'Open-Meteo modelled weather', type: 'weather', url: 'https://open-meteo.com/', status: weatherCache.data ? (weatherCache.error ? 'stale' : 'connected') : (weatherCache.error ? 'unavailable' : 'not_checked'), lastSuccess: weatherCache.fetchedAt, note: 'City-grid model output; not a direct rain-gauge observation. Request /api/weather/current to refresh.' },
     nc('INAMHI alerts', 'weather', 'https://servicios.inamhi.gob.ec/alertas/', 'Adapter stub: no documented machine-readable feed verified yet. Use manual import.'),
     nc('SGR flood susceptibility (ArcGIS MapServer)', 'gis', 'https://sgrportal.gestionderiesgos.gob.ec/server/rest/services/Susceptibilidad_de_Inundaciones/MapServer', 'Next step: query layer with ?f=json, store polygons in PostGIS.'),
     nc('Google Flood Forecasting API', 'river', 'https://developers.google.com/flood-forecasting', 'Requires approved access + API key (GOOGLE_FLOOD_API_KEY).'),
@@ -214,6 +284,7 @@ const pubReport = r => ({ photos: r.photos || [], gps: false, locationSource: r.
 R('GET', '/api/health', async c => send(c.res, 200, { ok: true, mode: db.mode, time: now(), demoRoles: demoRolesEnabled }));
 R('POST', '/api/login', async c => { const b = await body(c.req), requested = ['resident', 'moderator', 'responder', 'admin'].includes(b.role) ? b.role : 'resident'; if (requested !== 'resident' && (!demoRolesEnabled || !sameSecret(b.demoKey, DEMO_SECRET))) return send(c.res, 403, { error: 'privileged demo roles are disabled; use a local demo configuration' }); const t = crypto.randomBytes(16).toString('hex'); sessions[t] = { role: requested, name: clean(b.name || requested, 30) + ' (demo)', id: t.slice(0, 6) }; audit(sessions[t].name, 'login', requested); save(); send(c.res, 200, { token: t, user: sessions[t] }); });
 R('GET', '/api/sources/status', async c => send(c.res, 200, { fetchedAt: now(), sources: await sources() }));
+R('GET', '/api/weather/current', async c => { const w = await getWeather(c.q.get('refresh') === '1'); send(c.res, w.status === 'unavailable' ? 503 : 200, w); });
 R('GET', '/api/alerts', async c => send(c.res, 200, { demo: true, alerts: db.alerts.map(a => ({ ...a, fresh: new Date(a.validUntil) > new Date() })) }));
 R('GET', '/api/flood/zones', async c => send(c.res, 200, { demo: true, note: 'Coarse sample polygons, not street-level flood boundaries.', zones: db.zones }));
 R('GET', '/api/flood/sensors', async c => {
@@ -239,8 +310,8 @@ R('GET', '/api/flood/route', async c => {
   if (result.error) return send(c.res, 400, { error: result.error });
   send(c.res, result.found ? 200 : 409, result);
 });
-R('GET', '/api/flood/assessments', async c => { const p = coordinates(c.q); if (!p) throw new HttpError(400, 'lat and lng are required'); send(c.res, 200, assess(p.lat, p.lng)); });
-R('GET', '/api/flood/intelligence', async c => { const p = coordinates(c.q); if (!p) throw new HttpError(400, 'lat and lng are required'); send(c.res, 200, buildIntelligence(p.lat, p.lng)); });
+R('GET', '/api/flood/assessments', async c => { const p = coordinates(c.q); if (!p) throw new HttpError(400, 'lat and lng are required'); const weather = await getWeather(); send(c.res, 200, assess(p.lat, p.lng, weather)); });
+R('GET', '/api/flood/intelligence', async c => { const p = coordinates(c.q); if (!p) throw new HttpError(400, 'lat and lng are required'); if (p.lat < -2.36 || p.lat > -2.04 || p.lng < -80.06 || p.lng > -79.72) return send(c.res, 200, { state: 'no_signal', hazardSeverity: 'insufficient', evidenceConfidence: 0, hazardIndex: 0, explanation: 'No city profile or validated hazard evidence is configured for this location. Guayaquil demo data was not applied.', actions: [], missing: ['City profile unavailable', 'No local hazard sources configured'], consequences: { level: 'unknown', affectedRoads: [], affectedFacilities: [] } }); const weather = await getWeather(); send(c.res, 200, buildIntelligence(p.lat, p.lng, weather)); });
 R('POST', '/api/flood/replay', async c => {
   if (!limit(c.ip, 'replay', 20, 60000)) return send(c.res, 429, { error: 'Too many replay requests.' });
   const b = await body(c.req);
@@ -270,12 +341,18 @@ R('DELETE', '/api/chat/:id', async c => { if (!need(c, 'moderator', 'admin')) re
 R('GET', '/api/shops', async c => send(c.res, 200, { demo: true, note: 'Open/closed is community-reported and not confirmed by the shops.', shops: db.shops }));
 R('POST', '/api/shops', async c => { if (!limit(c.ip, 'shop', 5, 600000)) return send(c.res, 429, { error: 'Too many shops added.' }); const b = await body(c.req); if (clean(b.name, 60).length < 3 || !num(b.lat, -90, 90) || !num(b.lng, -180, 180) || !['open', 'closed'].includes(b.status)) return send(c.res, 400, { error: 'name, location and status required' }); const s = { id: uid('S'), name: clean(b.name, 60), lat: b.lat, lng: b.lng, status: b.status, updated: now(), by: 'community' }; db.shops.push(s); save(); send(c.res, 201, { shop: s }); });
 R('POST', '/api/shops/:id/status', async c => { if (!limit(c.ip, 'shopst', 10, 60000)) return send(c.res, 429, { error: 'Too many updates.' }); const b = await body(c.req), s = db.shops.find(x => x.id === c.p[0]); if (!s || !['open', 'closed', 'unknown'].includes(b.status)) return send(c.res, 400, { error: 'invalid' }); s.status = b.status; s.updated = now(); s.by = 'community'; db.chat.push({ id: uid('M'), name: 'Shop board', text: s.name + ': reported ' + b.status, at: now(), role: 'system' }); save(); send(c.res, 200, { shop: s }); });
-R('GET', '/api/safe-locations', async c => { const p = coordinates(c.q), t = c.q.get('type'); let l = db.facilities.filter(f => !t || f.type === t); if (p) l = l.map(f => ({ ...f, distanceKm: +km(p.lat, p.lng, f.lat, f.lng).toFixed(2) })).sort((a, b) => a.distanceKm - b.distanceKm); send(c.res, 200, { demo: true, note: 'Availability/open status not provided: no trusted source connected.', facilities: l }); });
+R('GET', '/api/safe-locations', async c => { const p = coordinates(c.q), t = c.q.get('type'); if (p && (p.lat < -2.36 || p.lat > -2.04 || p.lng < -80.06 || p.lng > -79.72)) return send(c.res, 200, { demo: true, coverage: false, note: 'No configured service directory covers this location. Guayaquil sample facilities were not returned.', facilities: [] }); let l = db.facilities.filter(f => !t || f.type === t); if (p) l = l.map(f => ({ ...f, distanceKm: +km(p.lat, p.lng, f.lat, f.lng).toFixed(2) })).sort((a, b) => a.distanceKm - b.distanceKm); send(c.res, 200, { demo: true, coverage: true, note: 'Availability/open status not provided: no trusted source connected.', facilities: l }); });
 R('POST', '/api/sos', async c => {
+  const b = await body(c.req);
+  const clientRequestId = typeof b.clientRequestId === 'string' && /^[A-Za-z0-9-]{8,80}$/.test(b.clientRequestId) ? b.clientRequestId : null;
+  if (clientRequestId) {
+    const existing = db.sos.find(x => x.clientRequestId === clientRequestId);
+    if (existing) return send(c.res, 200, { ref: existing.id, accessCode: existing.secret, status: existing.status, deduplicated: true, message: 'This request was already accepted by the FloodSense server. Official emergency dispatch is not connected.' });
+  }
   if (!limit(c.ip, 'sos', 3, 600000)) return send(c.res, 429, { error: 'SOS rate limit reached. If in danger, call 911 now.' });
-  const b = await body(c.req); if (!num(b.lat, -90, 90) || !num(b.lng, -180, 180)) return send(c.res, 400, { error: 'location required (tap the map or use GPS)' });
+  if (!num(b.lat, -90, 90) || !num(b.lng, -180, 180)) return send(c.res, 400, { error: 'location required (tap the map or use GPS)' });
   const types = ['flooding', 'trapped', 'medical', 'evacuation', 'other']; if (!types.includes(b.type)) return send(c.res, 400, { error: 'invalid type' });
-  const s = { id: uid('SOS'), secret: crypto.randomBytes(4).toString('hex'), type: b.type, description: clean(b.description, 400), lat: b.lat, lng: b.lng, status: 'received', created: now(), history: [{ at: now(), status: 'received', by: 'system' }], notes: [], assignee: null, owner: c.user ? c.user.id : 'anon' };
+  const s = { id: uid('SOS'), secret: crypto.randomBytes(4).toString('hex'), clientRequestId, type: b.type, description: clean(b.description, 400), lat: b.lat, lng: b.lng, status: 'received', created: now(), history: [{ at: now(), status: 'received', by: 'system' }], notes: [], assignee: null, owner: c.user ? c.user.id : 'anon' };
   db.sos.push(s); audit('system', 'sos.created', s.id); save();
   send(c.res, 201, { ref: s.id, accessCode: s.secret, status: s.status, message: 'Your request was submitted to the FloodSense response dashboard. Official emergency dispatch is not connected. Call 911 if you are in danger.' });
 });
