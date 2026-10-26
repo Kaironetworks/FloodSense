@@ -1,5 +1,4 @@
-<div align="center">
-
+::: {align="center"}
 # FloodSense
 
 ### City-adaptive flood intelligence. Safer decisions when every minute matters.
