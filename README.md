@@ -1,4 +1,4 @@
-::: {align="center"}
+
 # FloodSense
 
 ### Turning flood uncertainty into clearer, explainable decisions.
