@@ -138,7 +138,7 @@ V.report = () => {
 V.sos = () => {
   const saved = JSON.parse(localStorage.sos || 'null');
   const pending = JSON.parse(localStorage.pendingSos || '[]');
-  panel.innerHTML = `<div class="card" style="border-color:#f43f5e"><b>In danger? Call 911 first.</b><br><a class="btn sos" href="tel:911">${t('call')}</a></div>
+  panel.innerHTML = `<div class="card" style="border-color:#f43f5e"><b>In danger? Call 911 first.</b><div class="sos-warning-action"><a class="btn sos" href="tel:911">${t('call')}</a></div></div>
   <h2>SOS</h2><p class="mut">When online, a submitted request is sent to the FloodSense server response dashboard. <b>Official emergency dispatch is not connected.</b> If offline, you may explicitly save a request on this device; it is NOT SENT until the server accepts it.</p>
   ${pending.map((x,i) => `<div class="stale"><b>NOT SENT — WAITING FOR CONNECTION</b><br>Local request ${i+1} · saved ${fmt(x.queuedAt)}. It has not reached responders. Keep this page open for automatic retry when connection returns.${x.lastError ? `<div class="err">${esc(x.lastError)}</div>` : ''}<br><button class="btn" data-pending-remove="${esc(x.clientRequestId)}">Discard local request</button></div>`).join('')}
   <form id="f"><label>Type</label><select name="type"><option value="flooding">Flooding</option><option value="trapped">Trapped person</option><option value="medical">Medical emergency</option><option value="evacuation">Evacuation assistance</option><option value="other">Other</option></select>
